@@ -1,4 +1,4 @@
-package org.prh.DistributedFileSystem;
+package org.prh.DFS;
 
 import java.util.ArrayList;
 import java.util.List;
