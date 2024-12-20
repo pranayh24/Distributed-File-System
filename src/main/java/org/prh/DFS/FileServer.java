@@ -8,6 +8,8 @@ public class FileServer {
 
     private final int port;
     private final String storagePath;
+    private ServerSocket serverSocket;
+    private boolean running = true;
 
     public FileServer(int port, String storagePath) {
         this.port = port;
@@ -20,19 +22,40 @@ public class FileServer {
     }
 
     public void start() {
-        try(ServerSocket serverSocket = new ServerSocket(port)) {
+        try {
+            serverSocket = new ServerSocket(port);
             System.out.println("File server started on port: " + port);
 
-            while(true) {
-                // Accept incoming connections
-                Socket clientSocket = serverSocket.accept();
-                System.out.println("Client connected: " + clientSocket.getInetAddress());
+            while(running) {
+                try {
+                    // Accept incoming connections
+                    Socket clientSocket = serverSocket.accept();
+                    System.out.println("Client connected: " + clientSocket.getInetAddress());
 
-                // Handle requests in a separate thread
-                new Thread(new ClientHandler(clientSocket, storagePath)).start();
+                    // Handle requests in a separate thread
+                    new Thread(new ClientHandler(clientSocket, storagePath)).start();
+                } catch (Exception e) {
+                    if(running) {
+                        System.err.println("Error handling client request: " + e.getMessage());
+                    }
+                }
             }
         } catch (Exception e) {
             System.err.println("Error starting server: " + e.getMessage());
+        } finally {
+            stop();
+        }
+    }
+
+    public void stop() {
+        running = false;
+        if(serverSocket != null && !serverSocket.isClosed()) {
+            try {
+                serverSocket.close();
+                System.out.println("Server stopped");
+            } catch (Exception e) {
+                System.err.println("Error stopping server: " + e.getMessage());
+            }
         }
     }
 
