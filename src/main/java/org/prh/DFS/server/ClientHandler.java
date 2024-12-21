@@ -1,4 +1,4 @@
-package org.prh.DFS;
+package org.prh.DFS.server;
 
 import java.io.*;
 import java.net.Socket;
