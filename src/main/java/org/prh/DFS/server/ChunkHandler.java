@@ -16,6 +16,7 @@ public class ChunkHandler implements Runnable{
     public ChunkHandler(Socket clientSocket, String storagePath) {
         this.clientSocket = clientSocket;
         this.storagePath = storagePath;
+        System.out.println("Created new ChunkHandler for client: " + clientSocket.getInetAddress());
     }
 
     @Override
@@ -23,7 +24,9 @@ public class ChunkHandler implements Runnable{
         try(ObjectInputStream ois = new ObjectInputStream(clientSocket.getInputStream());
             ObjectOutputStream oos = new ObjectOutputStream(clientSocket.getOutputStream())) {
 
+            System.out.println("Reading chunk from client...");
             FileChunk chunk = (FileChunk) ois.readObject();
+            System.out.println("Received chunk " + chunk.getChunkNumber() + " for file:" + chunk.getFileName());
 
             // Verify checksum
             String calculatedChecksum = FileUtils.calculateCheckSum(chunk.getData());
@@ -35,9 +38,17 @@ public class ChunkHandler implements Runnable{
             // Process the chunk
             processChunk(chunk);
             oos.writeObject("CHUNK_RECEIVED");
+            System.out.println("Successfully processed chunk " + chunk.getChunkNumber());
 
         } catch(Exception e) {
             System.err.println("Error handling chunk: " + e.getMessage());
+            e.printStackTrace();
+        } finally {
+            try {
+                clientSocket.close();
+            } catch(IOException e) {
+                System.err.println("Error closing client socket: " + e.getMessage());
+            }
         }
     }
 
@@ -46,9 +57,12 @@ public class ChunkHandler implements Runnable{
         Object fileLock = fileLocks.computeIfAbsent(fileId, k-> new Object());
 
         synchronized (fileLock) {
+            String fullPath = storagePath + File.separator + chunk.getFileName();
+            System.out.println("Processing chunk to file: " + fullPath);
+
             FileOutputStream fos = activeFiles.computeIfAbsent(fileId, k -> {
                 try {
-                    return new FileOutputStream(storagePath + File.separator + chunk.getFileName());
+                    return new FileOutputStream(fullPath);
                 } catch (FileNotFoundException e) {
                     throw new RuntimeException(e);
                 }
@@ -63,6 +77,7 @@ public class ChunkHandler implements Runnable{
                 fos.close();
                 activeFiles.remove(fileId);
                 fileLocks.remove(fileId);
+                System.out.println("File completed: " + chunk.getFileName());
             }
         }
     }

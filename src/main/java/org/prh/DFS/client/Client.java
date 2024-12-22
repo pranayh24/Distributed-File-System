@@ -1,16 +1,14 @@
 package org.prh.DFS.client;
 
 import org.prh.DFS.model.FileChunk;
-import org.prh.DFS.utils.FileUtils;
 
 import java.io.*;
 import java.net.Socket;
 import java.util.UUID;
 import java.util.concurrent.*;
+import org.prh.DFS.utils.FileUtils;
 
 public class Client {
-    public static final int MAX_RETRIES = 3;
-    private static final int THREAD_POOL_SIZE = 5;
     private final String serverAddress;
     private final int port;
     private final ExecutorService executorService;
@@ -18,98 +16,105 @@ public class Client {
     public Client(String serverAddress, int port) {
         this.serverAddress = serverAddress;
         this.port = port;
-        this.executorService = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+        this.executorService = Executors.newFixedThreadPool(5);
     }
 
     public void uploadFile(String localPath) throws IOException {
         File file = new File(localPath);
-        if(!file.exists()) {
+        if (!file.exists()) {
             throw new FileNotFoundException("Source file not found: " + localPath);
         }
 
-        String fileId = UUID.randomUUID().toString();
-        String transferId = FileUtils.initializeTransfer(file, FileUtils.DEFAULT_CHUNK_SIZE);
+        System.out.println("Starting upload of file: " + file.getName());
+        System.out.println("File size: " + file.length() + " bytes");
 
-        try (FileInputStream fis = new FileInputStream(file)) {
-            long totalChunks = (file.length() + FileUtils.DEFAULT_CHUNK_SIZE - 1) / FileUtils.DEFAULT_CHUNK_SIZE;
-            CompletableFuture<?>[] futures = new CompletableFuture[(int) totalChunks];
+        try {
+            // Calculate number of chunks
+            int chunkSize = 1024 * 1024; // 1MB chunks
+            long totalChunks = (file.length() + chunkSize - 1) / chunkSize;
+            System.out.println("Total chunks to upload: " + totalChunks);
 
+            // Read and upload each chunk
+            try (FileInputStream fis = new FileInputStream(file)) {
+                byte[] buffer = new byte[chunkSize];
+                int chunkNumber = 0;
+                int bytesRead;
 
-            for(int i = 0;i < totalChunks; i++) {
-                final int chunkNumber = i;
-                futures[i] = CompletableFuture.runAsync(() -> {
-                    try {
-                        uploadChunk(file, fileId, chunkNumber, totalChunks);
-                        FileUtils.getProgress(transferId).incrementProcessedChunks();
+                while ((bytesRead = fis.read(buffer)) > 0) {
+                    final int currentChunk = chunkNumber;
+                    final byte[] chunkData = bytesRead < chunkSize ?
+                            java.util.Arrays.copyOf(buffer, bytesRead) : buffer.clone();
 
-                        double progress = FileUtils.getProgress(transferId).getProgress();
-                        System.out.printf("\rUpload progress: %.2f%", progress);
-                    } catch(IOException e) {
-                        throw new CompletionException(e);
-                    }
-                }, executorService);
+                    System.out.println("Uploading chunk " + currentChunk + " of " + totalChunks);
+
+                    // Upload chunk
+                    uploadChunk(file.getName(), currentChunk, chunkData, totalChunks);
+                    chunkNumber++;
+                }
             }
 
-            CompletableFuture.allOf(futures).join();
-            System.out.println("\nUpload complete!");
+            System.out.println("Upload complete!");
         } finally {
-            FileUtils.removeProgress(transferId);
+            close();
         }
     }
 
-    private void uploadChunk(File file, String fileId, int chunkNumber, long totalChunks) throws IOException {
-        try (Socket socket = new Socket(serverAddress, port);
-             RandomAccessFile raf = new RandomAccessFile(file, "r");
-             ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
-             ObjectInputStream ois = new ObjectInputStream(socket.getInputStream())) {
+    private void uploadChunk(String fileName, int chunkNumber, byte[] data, long totalChunks)
+            throws IOException {
+        try (Socket socket = new Socket(serverAddress, port)) {
+            System.out.println("Connected to server for chunk " + chunkNumber);
 
-            // Position the file pointer
-            long position = (long) chunkNumber * FileUtils.DEFAULT_CHUNK_SIZE;
-            raf.seek(position);
+            try (ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
+                 ObjectInputStream ois = new ObjectInputStream(socket.getInputStream())) {
 
-            // Read the chunk
-            int chunkSize = (int) Math.min(FileUtils.DEFAULT_CHUNK_SIZE, file.length() - position);
-            byte[] data = new byte[chunkSize];
-            raf.read(data);
+                // Calculate checksum
+                String checksum = FileUtils.calculateCheckSum(data);
 
-            // Calculate checksum
-            String checksum = FileUtils.calculateCheckSum(data);
+                // Create and send chunk
+                FileChunk chunk = new FileChunk(
+                        UUID.randomUUID().toString(),
+                        fileName,
+                        chunkNumber,
+                        data,
+                        checksum,
+                        totalChunks
+                );
 
-            // Create and send chunk
-            FileChunk chunk = new FileChunk(fileId, file.getName(), chunkNumber,
-                    data, checksum, totalChunks);
-            oos.writeObject(chunk);
-            oos.flush();
+                oos.writeObject(chunk);
+                oos.flush();
 
-            // Wait for server confirmation
-            String response = (String) ois.readObject();
-            if (!response.equals("CHUNK_RECEIVED")) {
-                throw new IOException("Failed to upload chunk " + chunkNumber + ": " + response);
+                // Wait for server confirmation
+                String response = (String) ois.readObject();
+                System.out.println("Server response for chunk " + chunkNumber + ": " + response);
+            } catch (ClassNotFoundException e) {
+                throw new IOException("Error reading server response", e);
             }
-        } catch (ClassNotFoundException e) {
-            throw new IOException("Error reading server response", e);
         }
     }
 
     public void close() {
         executorService.shutdown();
         try {
-            if(!executorService.awaitTermination(60, TimeUnit.SECONDS)) {
+            if (!executorService.awaitTermination(60, TimeUnit.SECONDS)) {
                 executorService.shutdownNow();
             }
-        } catch(InterruptedException e) {
+        } catch (InterruptedException e) {
             executorService.shutdownNow();
+            Thread.currentThread().interrupt();
         }
     }
 
     public static void main(String[] args) {
         Client client = new Client("localhost", 8888);
         try {
-            client.uploadFile("D:\\seriess\\cricket_prediction_system.py");
+            // Replace with your actual file path
+            String filePath = "D:\\seriess\\cricket_prediction_system.py";
+            System.out.println("Starting client...");
+            System.out.println("Attempting to upload file: " + filePath);
+            client.uploadFile(filePath);
         } catch (IOException e) {
+            System.err.println("Error during file upload: ");
             e.printStackTrace();
-        } finally {
-            client.close();
         }
     }
 }

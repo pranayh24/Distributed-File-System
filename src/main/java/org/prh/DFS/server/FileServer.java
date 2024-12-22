@@ -14,10 +14,17 @@ public class FileServer {
     public FileServer(int port, String storagePath) {
         this.port = port;
         this.storagePath = storagePath;
-        File storageDir = new File(storagePath);
+        initializeStorageDirectory();
+    }
 
+    private void initializeStorageDirectory() {
+        File storageDir = new File(storagePath);
         if(!storageDir.exists()) {
-            storageDir.mkdirs();
+            if(storageDir.mkdirs()) {
+                System.out.println("Storage directory created: " + storagePath);
+            } else {
+                throw new RuntimeException("Failed to create storage directory: " + storagePath);
+            }
         }
     }
 
@@ -32,16 +39,19 @@ public class FileServer {
                     Socket clientSocket = serverSocket.accept();
                     System.out.println("Client connected: " + clientSocket.getInetAddress());
 
-                    // Handle requests in a separate thread
-                    new Thread(new ClientHandler(clientSocket, storagePath)).start();
+                    // Handle each client connection in a new thread
+                    Thread handlerThread  = new Thread(new ChunkHandler(clientSocket, storagePath));
+                    handlerThread.start();
                 } catch (Exception e) {
                     if(running) {
                         System.err.println("Error handling client request: " + e.getMessage());
+                        e.printStackTrace();
                     }
                 }
             }
         } catch (Exception e) {
             System.err.println("Error starting server: " + e.getMessage());
+            e.printStackTrace();
         } finally {
             stop();
         }
@@ -61,7 +71,7 @@ public class FileServer {
 
     public static void main(String[] args) {
         int port = 8888;
-        String storagePath = "D:\\Server Path";
+        String storagePath = "D:\\DFSStorage\\";
 
         FileServer fileServer = new FileServer(port, storagePath);
         fileServer.start();

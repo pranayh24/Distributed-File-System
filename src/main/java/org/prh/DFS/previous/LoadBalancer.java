@@ -1,4 +1,4 @@
-package org.prh.DFS;
+package org.prh.DFS.previous;
 
 import java.util.ArrayList;
 import java.util.List;
