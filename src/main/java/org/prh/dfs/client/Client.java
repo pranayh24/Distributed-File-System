@@ -1,12 +1,12 @@
-package org.prh.DFS.client;
+package org.prh.dfs.client;
 
-import org.prh.DFS.model.FileChunk;
+import org.prh.dfs.model.FileChunk;
 
 import java.io.*;
 import java.net.Socket;
 import java.util.UUID;
 import java.util.concurrent.*;
-import org.prh.DFS.utils.FileUtils;
+import org.prh.dfs.utils.FileUtils;
 
 public class Client {
     private final String serverAddress;

@@ -1,10 +1,9 @@
-package org.prh.DFS.client;
+package org.prh.dfs.client;
 
-import org.prh.DFS.model.Command;
-import org.prh.DFS.model.FileMetaData;
+import org.prh.dfs.model.Command;
+import org.prh.dfs.model.FileMetaData;
 
 import java.io.IOException;
-import java.io.ObjectInput;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;

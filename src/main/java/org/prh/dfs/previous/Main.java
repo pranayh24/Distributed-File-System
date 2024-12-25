@@ -1,4 +1,4 @@
-package org.prh.DFS.previous;
+package org.prh.dfs.previous;
 
 public class Main {
 

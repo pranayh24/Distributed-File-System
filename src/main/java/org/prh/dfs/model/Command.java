@@ -1,6 +1,5 @@
-package org.prh.DFS.model;
+package org.prh.dfs.model;
 
-import lombok.Data;
 import lombok.Getter;
 
 @Getter

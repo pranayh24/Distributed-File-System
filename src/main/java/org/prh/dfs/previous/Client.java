@@ -1,4 +1,4 @@
-package org.prh.DFS.previous;
+package org.prh.dfs.previous;
 
 import java.io.*;
 import java.net.*;

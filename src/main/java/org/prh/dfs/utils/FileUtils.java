@@ -1,7 +1,6 @@
-package org.prh.DFS.utils;
+package org.prh.dfs.utils;
 
 import java.io.File;
-import java.io.IOException;
 import java.security.MessageDigest;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;

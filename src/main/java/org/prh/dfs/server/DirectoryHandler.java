@@ -1,6 +1,6 @@
-package org.prh.DFS.server;
+package org.prh.dfs.server;
 
-import org.prh.DFS.model.FileMetaData;
+import org.prh.dfs.model.FileMetaData;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
