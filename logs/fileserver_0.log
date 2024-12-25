@@ -66,3 +66,5 @@ Dec 26, 2024 2:26:34 AM org.prh.dfs.server.FileServer start
 INFO: Client connected: /127.0.0.1
 Dec 26, 2024 2:26:53 AM org.prh.dfs.server.FileServer start
 INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:32:42 AM org.prh.dfs.server.FileServer stop
+INFO: Initiating server shutdown...
