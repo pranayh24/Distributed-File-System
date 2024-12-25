@@ -1,0 +1,68 @@
+Dec 25, 2024 6:26:55 PM org.prh.dfs.server.FileServer initializeStorageDirectory
+INFO: Storage directory initialized at:D:\DFSStorage\
+Dec 25, 2024 6:26:55 PM org.prh.dfs.server.FileServer start
+INFO: File server started on port: 8888
+Dec 26, 2024 1:35:56 AM org.prh.dfs.server.FileServer initializeStorageDirectory
+INFO: Storage directory initialized at:D:\DFSStorage\
+Dec 26, 2024 1:35:56 AM org.prh.dfs.server.FileServer start
+INFO: File server started on port: 8888
+Dec 26, 2024 1:37:00 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 1:38:39 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 1:38:51 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 1:44:42 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 1:48:05 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:00:41 AM org.prh.dfs.server.FileServer stop
+INFO: Initiating server shutdown...
+Dec 26, 2024 2:00:52 AM org.prh.dfs.server.FileServer initializeStorageDirectory
+INFO: Storage directory created: D:\DFSStorage\
+Dec 26, 2024 2:00:52 AM org.prh.dfs.server.FileServer initializeStorageDirectory
+INFO: Storage directory initialized at:D:\DFSStorage\
+Dec 26, 2024 2:00:52 AM org.prh.dfs.server.FileServer start
+INFO: File server started on port: 8888
+Dec 26, 2024 2:01:03 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:07:27 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:08:19 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:10:59 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:11:07 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:14:10 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:14:59 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:16:12 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:16:52 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:18:46 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:22:48 AM org.prh.dfs.server.FileServer stop
+INFO: Initiating server shutdown...
+Dec 26, 2024 2:22:57 AM org.prh.dfs.server.FileServer initializeStorageDirectory
+INFO: Storage directory initialized at:D:\DFSStorage\
+Dec 26, 2024 2:22:57 AM org.prh.dfs.server.FileServer start
+INFO: File server started on port: 8888
+Dec 26, 2024 2:23:12 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:23:50 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:24:28 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:24:56 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:26:00 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:26:06 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:26:34 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1
+Dec 26, 2024 2:26:53 AM org.prh.dfs.server.FileServer start
+INFO: Client connected: /127.0.0.1

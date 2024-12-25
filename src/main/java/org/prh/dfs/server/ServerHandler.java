@@ -7,6 +7,12 @@ import org.prh.dfs.utils.FileUtils;
 
 import java.io.*;
 import java.net.Socket;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
@@ -109,8 +115,30 @@ public class ServerHandler implements Runnable{
             }
         } catch(Exception e) {
             LOGGER.log(Level.SEVERE, "Error processing command: " + command.getType());
-            oos.writeObject(null); // Indicate failure to the client
+            oos.writeObject("Error: " + e.getMessage()); // Indicate failure to the client
         }
+    }
+
+    private List<FileMetaData> listDirectory(String path) throws IOException {
+        Path dirPath = Paths.get(storagePath, path);
+        List<FileMetaData> files = new ArrayList<>();
+
+        if (!Files.exists(dirPath)) {
+            return files; // Return empty list for non-existent directory
+        }
+
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dirPath)) {
+            for (Path entry : stream) {
+                files.add(new FileMetaData(
+                        entry.getFileName().toString(),
+                        entry.toString().substring(storagePath.length()).replace('\\', '/'),
+                        Files.isDirectory(entry),
+                        Files.size(entry),
+                        new Date(Files.getLastModifiedTime(entry).toMillis())
+                ));
+            }
+        }
+        return files;
     }
 
     /**

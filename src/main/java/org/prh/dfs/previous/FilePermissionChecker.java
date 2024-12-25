@@ -10,7 +10,7 @@ public class FilePermissionChecker {
     }
 
     public static void main(String[] args) {
-        String path = "D:\\seriess\\file.txt";
+        String path = "D:\\Minor_Project";
         if (hasReadWritePermissions(path)) {
             System.out.println("Read and write permissions are available for the path: " + path);
         } else {
