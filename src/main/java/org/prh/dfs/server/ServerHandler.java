@@ -1,9 +1,8 @@
 package org.prh.dfs.server;
 
-import org.prh.dfs.model.Command;
-import org.prh.dfs.model.FileChunk;
-import org.prh.dfs.model.FileMetaData;
+import org.prh.dfs.model.*;
 import org.prh.dfs.utils.FileUtils;
+import org.prh.dfs.versioning.VersionManager;
 
 import java.io.*;
 import java.net.Socket;
@@ -29,6 +28,8 @@ public class ServerHandler implements Runnable{
     private final Socket clientSocket;
     private final String storagePath;
     private final DirectoryHandler directoryHandler;
+    private final VersionManager versionManager;
+    private FileOperationResult result;
 
     // Thread-safe maps for file operations
     private static final ConcurrentHashMap<String, FileOutputStream> activeFiles = new ConcurrentHashMap<>();
@@ -38,6 +39,7 @@ public class ServerHandler implements Runnable{
         this.clientSocket = clientSocket;
         this.storagePath = storagePath;
         this.directoryHandler = new DirectoryHandler(storagePath);
+        this.versionManager = new VersionManager(storagePath);
         LOGGER.info(() -> "Created new ServerHandler for client: " + clientSocket.getInetAddress());
     }
 
@@ -110,8 +112,27 @@ public class ServerHandler implements Runnable{
                     oos.writeObject(fileDeleted);
                     break;
 
+                case CREATE_VERSION:
+                    Version version = versionManager.createVersion(
+                            command.getPath(),
+                            command.getCreator(),
+                            command.getComment()
+                    );
+                    result = FileOperationResult.success("Version created successfully", version);
+                    break;
+
+                case LIST_VERSIONS:
+                    List<Version> versions = versionManager.getVersions(command.getPath());
+                    result = FileOperationResult.success("Versions retrieved successfully" , versions);
+                    break;
+
+                case RESTORE_VERSION:
+                    versionManager.restoreVersion(command.getPath(), command.getVersionId());
+                    result = FileOperationResult.success("Version restored successfully");
+                    break;
+
                 default:
-                    throw new IllegalArgumentException("Unsupported command type: " + command.getType());
+                    result = FileOperationResult.error("Unsupported command type: " + command.getType());
             }
         } catch(Exception e) {
             LOGGER.log(Level.SEVERE, "Error processing command: " + command.getType());

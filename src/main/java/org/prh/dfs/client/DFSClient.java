@@ -4,9 +4,7 @@ import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
-import org.prh.dfs.model.Command;
-import org.prh.dfs.model.FileChunk;
-import org.prh.dfs.model.FileMetaData;
+import org.prh.dfs.model.*;
 import org.prh.dfs.utils.FileUtils;
 
 import java.io.*;
@@ -27,6 +25,7 @@ public class DFSClient {
     private final String serverAddress;
     private final int serverPort;
     private final DirectoryOperations dirOps;
+    private final VersionOperations versionOps;
     private final SimpleDateFormat dateFormat;
     private final LineReader lineReader;
 
@@ -34,6 +33,7 @@ public class DFSClient {
         this.serverAddress = serverAddress;
         this.serverPort = serverPort;
         this.dirOps = new DirectoryOperations(serverAddress, serverPort);
+        this.versionOps = new VersionOperations(serverAddress, serverPort);
         this.dateFormat = new SimpleDateFormat("dd MMM HH:mm");
 
         Terminal terminal = TerminalBuilder.builder().system(true).build();
@@ -138,7 +138,7 @@ public class DFSClient {
 
     private void showPrompt() {
         System.out.println("\n" + ANSI_GREEN + "╔════════════════════════════════╗");
-        System.out.println("║     Distributed File System     ║");
+        System.out.println("║     Distributed File System    ║");
         System.out.println("╠════════════════════════════════╣");
         System.out.println("║ 1. List Directory              ║");
         System.out.println("║ 2. Create Directory            ║");
@@ -146,8 +146,71 @@ public class DFSClient {
         System.out.println("║ 4. Upload File                 ║");
         System.out.println("║ 5. Download File               ║");
         System.out.println("║ 6. Move/Rename File/Directory  ║");
-        System.out.println("║ 7. Exit                        ║");
+        System.out.println("║ 7. Create Version              ║");
+        System.out.println("║ 8. List Versions               ║");
+        System.out.println("║ 9. Restore Version             ║");
+        System.out.println("║ 0. Exit                        ║");
         System.out.println("╚════════════════════════════════╝" + ANSI_RESET);
+    }
+
+    private void createVersion() {
+        try {
+            String filePath = lineReader.readLine("Enter file path: ");
+            String comment = lineReader.readLine("Enter version comment: ");
+
+            FileOperationResult result = versionOps.createVersion(filePath, comment);
+            if (result.isSuccess()) {
+                System.out.println(ANSI_GREEN + "Version created successfully" + ANSI_RESET);
+                Version version = (Version) result.getData();
+                System.out.println("Version ID: " + version.getVersionId());
+            } else {
+                System.out.println(ANSI_YELLOW + "Error: " + result.getMessage() + ANSI_RESET);
+            }
+        } catch (Exception e) {
+            System.out.println(ANSI_YELLOW + "Error creating version: " + e.getMessage() + ANSI_RESET);
+        }
+    }
+
+    private void listVersions() {
+        try {
+            String filePath = lineReader.readLine("Enter file path: ");
+            List<Version> versions = versionOps.listVersions(filePath);
+
+            if (versions.isEmpty()) {
+                System.out.println(ANSI_YELLOW + "No versions found for this file" + ANSI_RESET);
+                return;
+            }
+
+            System.out.println("\n" + ANSI_BLUE + "File Versions:" + ANSI_RESET);
+            System.out.printf("%-36s %-20s %-20s %s%n", "Version ID", "Created At", "Creator", "Comment");
+            System.out.println("-".repeat(100));
+
+            for (Version version : versions) {
+                System.out.printf("%-36s %-20s %-20s %s%n",
+                        version.getVersionId(),
+                        version.getCreatedAt().toString(),
+                        version.getCreator(),
+                        version.getComment());
+            }
+        } catch (Exception e) {
+            System.out.println(ANSI_YELLOW + "Error listing versions: " + e.getMessage() + ANSI_RESET);
+        }
+    }
+
+    private void restoreVersion() {
+        try {
+            String filePath = lineReader.readLine("Enter file path: ");
+            String versionId = lineReader.readLine("Enter version ID to restore: ");
+
+            FileOperationResult result = versionOps.restoreVersion(filePath, versionId);
+            if (result.isSuccess()) {
+                System.out.println(ANSI_GREEN + "Version restored successfully" + ANSI_RESET);
+            } else {
+                System.out.println(ANSI_YELLOW + "Error: " + result.getMessage() + ANSI_RESET);
+            }
+        } catch (Exception e) {
+            System.out.println(ANSI_YELLOW + "Error restoring version: " + e.getMessage() + ANSI_RESET);
+        }
     }
 
     private void listDirectory() throws IOException{
