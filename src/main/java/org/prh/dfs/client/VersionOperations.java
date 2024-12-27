@@ -27,17 +27,28 @@ public class VersionOperations {
              ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
              ObjectInputStream ois = new ObjectInputStream(socket.getInputStream())) {
 
-            Command command = new Command(Command.Type.CREATE_VERSION, filePath, null, System.getProperty("user.name"), comment);
-            oos.writeObject(command);
+            // Remove any quotes from the comment
+            comment = comment.replaceAll("\"","");
 
+            Command command = new Command(Command.Type.CREATE_VERSION, filePath);
+            command.setComment(comment);
+            command.setCreator(System.getProperty("user.name"));
+
+            //Send the command
+            oos.writeObject(command);
+            oos.flush();
+
+            // Read and return the response
             Object response = ois.readObject();
             if(response instanceof FileOperationResult) {
                 return (FileOperationResult) response;
+            } else {
+                LOGGER.warning("Unexpected response type: " + response.getClass().getName());
+                return FileOperationResult.error("Unexpected response from server");
             }
-            return FileOperationResult.error("Unexpected response type");
         } catch(Exception e) {
             LOGGER.severe("Error creating version: " + e.getMessage());
-            return FileOperationResult.error(e);
+            return FileOperationResult.error("Failed to create version: " + e.getMessage());
         }
     }
 

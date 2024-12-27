@@ -113,12 +113,18 @@ public class ServerHandler implements Runnable{
                     break;
 
                 case CREATE_VERSION:
-                    Version version = versionManager.createVersion(
-                            command.getPath(),
-                            command.getCreator(),
-                            command.getComment()
-                    );
-                    result = FileOperationResult.success("Version created successfully", version);
+                    try {
+                        Version version = versionManager.createVersion(
+                                command.getPath(),
+                                command.getCreator(),
+                                command.getComment()
+                        );
+                        result = FileOperationResult.success("Version created successfully", version);
+                        LOGGER.info("Created version: " + version.getVersionId());
+                    } catch(Exception e) {
+                        LOGGER.severe("Error creating version: " + e.getMessage());
+                        result = FileOperationResult.error("Failed to create version: " + e.getMessage());
+                    }
                     break;
 
                 case LIST_VERSIONS:
@@ -135,8 +141,9 @@ public class ServerHandler implements Runnable{
                     result = FileOperationResult.error("Unsupported command type: " + command.getType());
             }
         } catch(Exception e) {
-            LOGGER.log(Level.SEVERE, "Error processing command: " + command.getType());
+            LOGGER.severe("Error processing command: " + e.getMessage());
             oos.writeObject("Error: " + e.getMessage()); // Indicate failure to the client
+            oos.flush();
         }
     }
 

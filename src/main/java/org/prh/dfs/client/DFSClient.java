@@ -9,19 +9,33 @@ import org.prh.dfs.utils.FileUtils;
 
 import java.io.*;
 import java.net.Socket;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.List;
 import java.util.logging.Logger;
 
+/**
+ * DFSClient provides a command-line interface for interacting with a Distributed File System.
+ * This client supports file operations, directory management, and version control functionality.
+ * It handles file transfers in chunks for better memory management and provides progress feedback
+ * for long-running operations.
+ */
 public class DFSClient {
     private static final Logger LOGGER = Logger.getLogger(DFSClient.class.getName());
-    private static final int CHUNK_SIZE = 1024 * 1024; // 1MB chunks
 
-    private static final String ANSI_RESET  = "\u001B[0m";
+    // Configuration constants for file operations
+    private static final int CHUNK_SIZE = 1024 * 1024; // 1MB chunks for file transfer
+    private static final String PATH_SEPARATOR = "/";   // Standard Unix-style separator for remote paths
+    private static final int BUFFER_SIZE = 8192;       // Buffer size for file downloads
+
+    // ANSI color codes for terminal output formatting
+    private static final String ANSI_RESET = "\u001B[0m";
     private static final String ANSI_GREEN = "\u001B[32m";
     private static final String ANSI_BLUE = "\u001B[34m";
     private static final String ANSI_YELLOW = "\u001B[33m";
 
+    // Client configuration and utilities
     private final String serverAddress;
     private final int serverPort;
     private final DirectoryOperations dirOps;
@@ -29,33 +43,78 @@ public class DFSClient {
     private final SimpleDateFormat dateFormat;
     private final LineReader lineReader;
 
-    public DFSClient(String serverAddress, int serverPort) throws IOException{
+    /**
+     * Constructs a new DFS client with specified server connection details.
+     * Initializes the terminal interface and required operation handlers.
+     *
+     * @param serverAddress The address of the DFS server
+     * @param serverPort The port number of the DFS server
+     * @throws IOException If terminal initialization fails
+     */
+    public DFSClient(String serverAddress, int serverPort) throws IOException {
         this.serverAddress = serverAddress;
         this.serverPort = serverPort;
         this.dirOps = new DirectoryOperations(serverAddress, serverPort);
         this.versionOps = new VersionOperations(serverAddress, serverPort);
         this.dateFormat = new SimpleDateFormat("dd MMM HH:mm");
 
+        // Initialize terminal for interactive input
         Terminal terminal = TerminalBuilder.builder().system(true).build();
         this.lineReader = LineReaderBuilder.builder()
                 .terminal(terminal)
                 .build();
-
     }
 
-    public void uploadFile(String localPath, String remotePath) throws IOException {
-        // Remove quotes if present
-        localPath = localPath.replaceAll("\"", "");
-        remotePath = remotePath.replaceAll("\"", "");
-
-        File file = new File(localPath);
-        if (!file.exists()) {
-            throw new FileNotFoundException("Local file not found: " + localPath);
+    /**
+     * Properly normalizes file paths across different operating systems.
+     * Handles both Windows and Unix-style paths correctly.
+     *
+     * @param path The path to normalize
+     * @return Normalized path string
+     */
+    private String normalizePath(String path) {
+        if (path == null || path.isEmpty()) {
+            return "";
         }
 
-        // Get just the filename for the remote path
+        // Remove any surrounding quotes
+        String cleanPath = path.replaceAll("^\"|\"$", "");
+
+        // For local paths, use system-specific handling
+        if (path.contains(":")) {  // Windows absolute path detected
+            return Paths.get(cleanPath).toString();
+        }
+
+        // For remote paths, convert to forward slashes
+        return cleanPath.replace("\\", "/")
+                .replaceAll("/+", "/")
+                .replaceAll("/$", "");
+    }
+
+
+    /**
+     * Uploads a file to the DFS server in chunks.
+     * Provides progress feedback during upload.
+     *
+     * @param localPath Path to the local file
+     * @param remotePath Destination path on the DFS
+     * @throws IOException If file operations fail
+     */
+    public void uploadFile(String localPath, String remotePath) throws IOException {
+        // Normalize paths for consistent handling
+        String normalizedLocalPath = Paths.get(normalizePath(localPath)).toString();
+        String normalizedRemotePath = normalizePath(remotePath);
+
+        File file = new File(normalizedLocalPath);
+        if (!file.exists()) {
+            throw new FileNotFoundException("Local file not found: " + normalizedLocalPath);
+        }
+
+        // Construct the full remote path
         String fileName = file.getName();
-        String fullRemotePath = remotePath.endsWith("/") ? remotePath + fileName : remotePath + "/" + fileName;
+        String fullRemotePath = normalizedRemotePath.endsWith(PATH_SEPARATOR) ?
+                normalizedRemotePath + fileName :
+                normalizedRemotePath + PATH_SEPARATOR + fileName;
 
         long fileSize = file.length();
         int totalChunks = (int) Math.ceil(fileSize / (double) CHUNK_SIZE);
@@ -68,12 +127,12 @@ public class DFSClient {
                 int bytesRead = fis.read(buffer);
                 if (bytesRead == -1) break;
 
-                byte[] chunkData;
+                // Prepare chunk data
+                byte[] chunkData = (bytesRead < CHUNK_SIZE) ?
+                        new byte[bytesRead] : buffer.clone();
+
                 if (bytesRead < CHUNK_SIZE) {
-                    chunkData = new byte[bytesRead];
                     System.arraycopy(buffer, 0, chunkData, 0, bytesRead);
-                } else {
-                    chunkData = buffer.clone();
                 }
 
                 FileChunk chunk = new FileChunk(
@@ -86,15 +145,19 @@ public class DFSClient {
                 );
 
                 sendChunk(chunk);
-                System.out.printf("Sent chunk %d of %d for file %s%n",
-                        chunkNumber + 1, totalChunks, fileName);
-
+                showProgressBar(chunkNumber + 1, totalChunks, "Uploading");
                 chunkNumber++;
             }
-            System.out.println("File upload completed successfully!");
+            System.out.println("\n" + ANSI_GREEN + "File upload completed successfully!" + ANSI_RESET);
         }
     }
 
+    /**
+     * Sends a single chunk of file data to the server.
+     *
+     * @param chunk The FileChunk to send
+     * @throws IOException If network operations fail
+     */
     private void sendChunk(FileChunk chunk) throws IOException {
         try (Socket socket = new Socket(serverAddress, serverPort);
              ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
@@ -102,7 +165,7 @@ public class DFSClient {
 
             LOGGER.info("Sending chunk: " + chunk.getChunkNumber());
             oos.writeObject(chunk);
-            oos.flush(); // Ensure all data is sent
+            oos.flush();
 
             String response = (String) ois.readObject();
             LOGGER.info("Received response: " + response);
@@ -115,66 +178,76 @@ public class DFSClient {
         }
     }
 
+    /**
+     * Downloads a file from the DFS server.
+     *
+     * @param remotePath Path to the file on the server
+     * @param localPath Destination path on the local system
+     * @throws IOException If file operations fail
+     */
     public void downloadFile(String remotePath, String localPath) throws IOException {
-        remotePath = remotePath.replaceAll("\"", "");
-        localPath = localPath.replaceAll("\"", "");
+        String normalizedRemotePath = normalizePath(remotePath);
+        String normalizedLocalPath = Paths.get(normalizePath(localPath)).toString();
 
         try (Socket socket = new Socket(serverAddress, serverPort);
              ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
              ObjectInputStream ois = new ObjectInputStream(socket.getInputStream())) {
 
-            Command command = new Command(Command.Type.DOWNLOAD_FILE, remotePath);
+            Command command = new Command(Command.Type.DOWNLOAD_FILE, normalizedRemotePath);
             oos.writeObject(command);
 
-            try (FileOutputStream fos = new FileOutputStream(localPath)) {
-                byte[] buffer = new byte[8192];
+            try (FileOutputStream fos = new FileOutputStream(normalizedLocalPath)) {
+                byte[] buffer = new byte[BUFFER_SIZE];
                 int bytesRead;
+                long totalBytes = 0;
+                long fileSize = ois.readLong(); // Read file size from server
+
                 while ((bytesRead = ois.read(buffer)) != -1) {
                     fos.write(buffer, 0, bytesRead);
+                    totalBytes += bytesRead;
+                    showProgressBar(totalBytes, fileSize, "Downloading");
                 }
+                System.out.println("\n" + ANSI_GREEN + "File download completed successfully!" + ANSI_RESET);
             }
         }
     }
 
-    private void showPrompt() {
-        System.out.println("\n" + ANSI_GREEN + "╔════════════════════════════════╗");
-        System.out.println("║     Distributed File System    ║");
-        System.out.println("╠════════════════════════════════╣");
-        System.out.println("║ 1. List Directory              ║");
-        System.out.println("║ 2. Create Directory            ║");
-        System.out.println("║ 3. Delete Directory            ║");
-        System.out.println("║ 4. Upload File                 ║");
-        System.out.println("║ 5. Download File               ║");
-        System.out.println("║ 6. Move/Rename File/Directory  ║");
-        System.out.println("║ 7. Create Version              ║");
-        System.out.println("║ 8. List Versions               ║");
-        System.out.println("║ 9. Restore Version             ║");
-        System.out.println("║ 0. Exit                        ║");
-        System.out.println("╚════════════════════════════════╝" + ANSI_RESET);
-    }
-
+    /**
+     * Manages the creation of file versions with metadata.
+     */
     private void createVersion() {
         try {
             String filePath = lineReader.readLine("Enter file path: ");
             String comment = lineReader.readLine("Enter version comment: ");
 
-            FileOperationResult result = versionOps.createVersion(filePath, comment);
+            // Remove any quotes if present
+            filePath = filePath.replaceAll("\"","");
+            comment = comment.replaceAll("\"","");
+
+            FileOperationResult result = versionOps.createVersion(normalizePath(filePath), comment);
             if (result.isSuccess()) {
                 System.out.println(ANSI_GREEN + "Version created successfully" + ANSI_RESET);
                 Version version = (Version) result.getData();
                 System.out.println("Version ID: " + version.getVersionId());
             } else {
                 System.out.println(ANSI_YELLOW + "Error: " + result.getMessage() + ANSI_RESET);
+                if(result.getErrorDetails() != null) {
+                    System.out.println("Details: " + result.getErrorDetails());
+                }
             }
         } catch (Exception e) {
             System.out.println(ANSI_YELLOW + "Error creating version: " + e.getMessage() + ANSI_RESET);
+            LOGGER.severe("Error in createVersion: " + e.getMessage());
         }
     }
 
+    /**
+     * Lists all versions of a specified file.
+     */
     private void listVersions() {
         try {
             String filePath = lineReader.readLine("Enter file path: ");
-            List<Version> versions = versionOps.listVersions(filePath);
+            List<Version> versions = versionOps.listVersions(normalizePath(filePath));
 
             if (versions.isEmpty()) {
                 System.out.println(ANSI_YELLOW + "No versions found for this file" + ANSI_RESET);
@@ -197,12 +270,18 @@ public class DFSClient {
         }
     }
 
+    /**
+     * Restores a file to a specific version.
+     */
     private void restoreVersion() {
         try {
             String filePath = lineReader.readLine("Enter file path: ");
             String versionId = lineReader.readLine("Enter version ID to restore: ");
 
-            FileOperationResult result = versionOps.restoreVersion(filePath, versionId);
+            FileOperationResult result = versionOps.restoreVersion(
+                    normalizePath(filePath),
+                    versionId
+            );
             if (result.isSuccess()) {
                 System.out.println(ANSI_GREEN + "Version restored successfully" + ANSI_RESET);
             } else {
@@ -213,24 +292,30 @@ public class DFSClient {
         }
     }
 
-    private void listDirectory() throws IOException{
+    /**
+     * Lists contents of a directory in the DFS.
+     *
+     * @throws IOException If directory listing fails
+     */
+    private void listDirectory() throws IOException {
         String path = lineReader.readLine("Enter path to list (or press Enter for root): ");
-        if(path.isEmpty()) {
-            path = "/";
-        }
+        path = path.isEmpty() ? "/" : normalizePath(path);
 
         List<FileMetaData> files = dirOps.listDirectory(path);
 
-        if(files.isEmpty()) {
+        if (files.isEmpty()) {
             System.out.println(ANSI_YELLOW + "Directory is empty" + ANSI_RESET);
             return;
         }
 
-        System.out.println("\n" + ANSI_BLUE + String.format("%-40s %-8s %12s %-20s", "Name", "Type", "Size", "Last Modified") + ANSI_RESET);
+        // Display directory contents in formatted table
+        System.out.println("\n" + ANSI_BLUE +
+                String.format("%-40s %-8s %12s %-20s", "Name", "Type", "Size", "Last Modified") +
+                ANSI_RESET);
         System.out.println("-".repeat(80));
 
-        for(FileMetaData file: files) {
-            System.out.printf("%-40s %-8s %-12s\n",
+        for (FileMetaData file : files) {
+            System.out.printf("%-40s %-8s %12s %-20s%n",
                     file.getName(),
                     file.isDirectory() ? "DIR" : "FILE",
                     formatFileSize(file.getSize()),
@@ -238,22 +323,59 @@ public class DFSClient {
         }
     }
 
+    /**
+     * Formats file size in human-readable format.
+     *
+     * @param size File size in bytes
+     * @return Formatted string representation of the file size
+     */
     private String formatFileSize(long size) {
-        if(size < 1024) return size + "B";
-        if(size < 1024 * 1024) return String.format("%.1f KB", size / 1024.0);
-        if(size < 1024 * 1024 * 1024) return String.format("%.1f MB", size / (1024.0 * 1024));
+        if (size < 1024) return size + "B";
+        if (size < 1024 * 1024) return String.format("%.1f KB", size / 1024.0);
+        if (size < 1024 * 1024 * 1024) return String.format("%.1f MB", size / (1024.0 * 1024));
         return String.format("%.1f GB", size / (1024.0 * 1024 * 1024));
     }
 
+    /**
+     * Displays a progress bar for ongoing operations.
+     *
+     * @param current Current progress value
+     * @param total Total expected value
+     * @param operation Name of the operation being performed
+     */
     private void showProgressBar(long current, long total, String operation) {
         int width = 50;
         int progress = (int) ((current * width) / total);
         System.out.print("\r" + operation + " [");
-        for(int i = 0;i < width; i++) {
-            System.out.print(i < progress ? "=": " ");
+        for (int i = 0; i < width; i++) {
+            System.out.print(i < progress ? "=" : " ");
         }
         System.out.printf("] %.1f%%", (current * 100.0) / total);
     }
+
+    /**
+     * Displays the main menu of the DFS client.
+     */
+    private void showPrompt() {
+        System.out.println("\n" + ANSI_GREEN + "╔════════════════════════════════╗");
+        System.out.println("║     Distributed File System    ║");
+        System.out.println("╠════════════════════════════════╣");
+        System.out.println("║ 1. List Directory              ║");
+        System.out.println("║ 2. Create Directory            ║");
+        System.out.println("║ 3. Delete Directory            ║");
+        System.out.println("║ 4. Upload File                 ║");
+        System.out.println("║ 5. Download File               ║");
+        System.out.println("║ 6. Move/Rename File/Directory  ║");
+        System.out.println("║ 7. Create Version              ║");
+        System.out.println("║ 8. List Versions               ║");
+        System.out.println("║ 9. Restore Version             ║");
+        System.out.println("║ 0. Exit                        ║");
+        System.out.println("╚════════════════════════════════╝" + ANSI_RESET);
+    }
+
+    /**
+     * Starts the DFS client interface and handles user commands.
+     */
 
     public void start() {
         while(true) {
@@ -296,7 +418,10 @@ public class DFSClient {
                                 ANSI_GREEN + "Move/rename successful" + ANSI_RESET :
                                 ANSI_YELLOW + "Failed to move/rename" + ANSI_RESET);
                     }
-                    case "7" -> {
+                    case "7" -> createVersion();
+                    case "8" -> listVersions();
+                    case "9" -> restoreVersion();
+                    case "0" -> {
                         System.out.println(ANSI_GREEN+ "Thank you for using DFS. Goodbye!" + ANSI_RESET);
                         return;
                     }
