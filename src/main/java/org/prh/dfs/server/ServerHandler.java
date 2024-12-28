@@ -120,25 +120,46 @@ public class ServerHandler implements Runnable{
                                 command.getComment()
                         );
                         result = FileOperationResult.success("Version created successfully", version);
-                        LOGGER.info("Created version: " + version.getVersionId());
+                        oos.writeObject(result);
+                        oos.flush();
                     } catch(Exception e) {
                         LOGGER.severe("Error creating version: " + e.getMessage());
                         result = FileOperationResult.error("Failed to create version: " + e.getMessage());
+                        oos.writeObject(result);
+                        oos.flush();
                     }
                     break;
 
                 case LIST_VERSIONS:
-                    List<Version> versions = versionManager.getVersions(command.getPath());
-                    result = FileOperationResult.success("Versions retrieved successfully" , versions);
+                    try {
+                        List<Version> versions = versionManager.getVersions(command.getPath());
+                        result = FileOperationResult.success("Versions retrieved successfully", versions);
+                        oos.writeObject(result);
+                        oos.flush();
+                    } catch (Exception e) {
+                        LOGGER.severe("Error listing versions: " + e.getMessage());
+                        oos.writeObject(FileOperationResult.error(e.getMessage()));
+                        oos.flush();
+                    }
                     break;
 
                 case RESTORE_VERSION:
-                    versionManager.restoreVersion(command.getPath(), command.getVersionId());
-                    result = FileOperationResult.success("Version restored successfully");
+                    try {
+                        versionManager.restoreVersion(command.getPath(), command.getVersionId());
+                        result = FileOperationResult.success("Version restored successfully");
+                        oos.writeObject(result);
+                        oos.flush();
+                    } catch(Exception e) {
+                        LOGGER.severe("Error restoring version: " + e.getMessage());
+                        oos.writeObject(FileOperationResult.error(e.getMessage()));
+                        oos.flush();
+                    }
                     break;
 
                 default:
                     result = FileOperationResult.error("Unsupported command type: " + command.getType());
+                    oos.writeObject(result);
+                    oos.flush();
             }
         } catch(Exception e) {
             LOGGER.severe("Error processing command: " + e.getMessage());
