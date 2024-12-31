@@ -292,6 +292,32 @@ public class DFSClient {
         }
     }
 
+    public void updateFile() {
+        try {
+           String localPath = lineReader.readLine("Enter local file path to update: ");
+           String remotePath = lineReader.readLine("Enter remote file path: ");
+           String comment = lineReader.readLine("Enter version comment");
+
+           localPath = localPath.replaceAll("^/+","");
+           remotePath = remotePath.replaceAll("^/+","");
+
+           // Upload the updated file
+           uploadFile(localPath, remotePath);
+
+           // Create a version of the updated file
+            FileOperationResult result = versionOps.createVersion(remotePath, comment);
+
+            if(result.isSuccess()) {
+                System.out.println(ANSI_GREEN + "File updated and version created successfully!" + ANSI_RESET);
+                Version version = (Version) result.getData();
+                System.out.println("Version ID: " + version.getVersionId());
+            } else {
+            System.out.println(ANSI_YELLOW + "Error: " + result.getMessage() + ANSI_RESET);
+            }
+        } catch(IOException e) {
+            System.out.println(ANSI_YELLOW + "Error updating and versioning file: " + e.getMessage() + ANSI_RESET);
+        }
+    }
     /**
      * Lists contents of a directory in the DFS.
      *
@@ -357,20 +383,21 @@ public class DFSClient {
      * Displays the main menu of the DFS client.
      */
     private void showPrompt() {
-        System.out.println("\n" + ANSI_GREEN + "╔════════════════════════════════╗");
-        System.out.println("║     Distributed File System    ║");
-        System.out.println("╠════════════════════════════════╣");
-        System.out.println("║ 1. List Directory              ║");
-        System.out.println("║ 2. Create Directory            ║");
-        System.out.println("║ 3. Delete Directory            ║");
-        System.out.println("║ 4. Upload File                 ║");
-        System.out.println("║ 5. Download File               ║");
-        System.out.println("║ 6. Move/Rename File/Directory  ║");
-        System.out.println("║ 7. Create Version              ║");
-        System.out.println("║ 8. List Versions               ║");
-        System.out.println("║ 9. Restore Version             ║");
-        System.out.println("║ 0. Exit                        ║");
-        System.out.println("╚════════════════════════════════╝" + ANSI_RESET);
+        System.out.println("\n" + ANSI_GREEN + "╔════════════════════════════════════╗");
+        System.out.println("║     Distributed File System        ║");
+        System.out.println("╠════════════════════════════════════╣");
+        System.out.println("║ 1. List Directory                  ║");
+        System.out.println("║ 2. Create Directory                ║");
+        System.out.println("║ 3. Delete Directory                ║");
+        System.out.println("║ 4. Upload File                     ║");
+        System.out.println("║ 5. Download File                   ║");
+        System.out.println("║ 6. Move/Rename File/Directory      ║");
+        System.out.println("║ 7. Create Version                  ║");
+        System.out.println("║ 8. List Versions                   ║");
+        System.out.println("║ 9. Restore Version                 ║");
+        System.out.println("║ 10. Update File and Create Version ║");
+        System.out.println("║ 0. Exit                            ║");
+        System.out.println("╚════════════════════════════════════╝" + ANSI_RESET);
     }
 
     /**
@@ -400,7 +427,7 @@ public class DFSClient {
                                 ANSI_YELLOW + "Failed to delete directory" + ANSI_RESET);
                     }
                     case "4" -> {
-                        String localPath = lineReader.readLine("Enter local file Path");
+                        String localPath = lineReader.readLine("Enter local file Path: ");
                         String remotePath = lineReader.readLine("Enter remote  directory path (or press Enter for root): ");
                         if (remotePath.isEmpty()) remotePath = "/";
                         uploadFile(localPath, remotePath);
@@ -421,6 +448,7 @@ public class DFSClient {
                     case "7" -> createVersion();
                     case "8" -> listVersions();
                     case "9" -> restoreVersion();
+                    case "10" -> updateFile();
                     case "0" -> {
                         System.out.println(ANSI_GREEN+ "Thank you for using DFS. Goodbye!" + ANSI_RESET);
                         return;
