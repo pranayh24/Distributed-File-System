@@ -253,7 +253,13 @@ public class ServerHandler implements Runnable{
         Object fileLock = fileLocks.computeIfAbsent(fileId, k -> new Object());
 
         synchronized (fileLock) {
-            String fullPath = storagePath + File.separator + chunk.getFileName();
+            //Normalize the filename by replacing any path  separators with the system's separator
+            String normalizedFileName = chunk.getFileName().replace('/', File.separatorChar);
+            // Remove any duplicate file name in the path
+            if(normalizedFileName.contains(File.separator)) {
+                normalizedFileName = normalizedFileName.substring(normalizedFileName.lastIndexOf(File.separator) + 1);
+            }
+            String fullPath = storagePath + File.separator + normalizedFileName;
             LOGGER.info(() -> "Processing chunk to file: " + fullPath);
 
 
