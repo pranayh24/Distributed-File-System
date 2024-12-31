@@ -132,8 +132,10 @@ public class ServerHandler implements Runnable{
 
                 case LIST_VERSIONS:
                     try {
-                        List<Version> versions = versionManager.getVersions(command.getPath());
+                        String normalizedPath = command.getPath().replace("^/+","");
+                        List<Version> versions = versionManager.getVersions(normalizedPath);
                         result = FileOperationResult.success("Versions retrieved successfully", versions);
+                        LOGGER.info("Found " + versions.size() + " versions for " + normalizedPath);
                         oos.writeObject(result);
                         oos.flush();
                     } catch (Exception e) {

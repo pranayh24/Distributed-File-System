@@ -4,6 +4,7 @@ import lombok.Getter;
 
 import java.io.Serializable;
 import java.time.Instant;
+import java.util.Objects;
 
 @Getter
 public class Version implements Serializable {
@@ -30,4 +31,16 @@ public class Version implements Serializable {
         this.comment = comment;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if(this == o) return true;
+        if(o == null || getClass() != o.getClass()) return false;
+        Version version = (Version) o;
+        return Objects.equals(versionId, version.versionId);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(versionId);
+    }
 }

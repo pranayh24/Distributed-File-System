@@ -3,8 +3,7 @@ package org.prh.dfs.versioning;
 import org.prh.dfs.model.Version;
 import org.prh.dfs.utils.FileUtils;
 
-import java.io.FileNotFoundException;
-import java.io.IOException;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -19,22 +18,29 @@ import java.util.logging.Logger;
 public class VersionManager {
     private static final Logger LOGGER = Logger.getLogger(VersionManager.class.getName());
     private static final String VERSION_DIR = ".versions";
+    private static final String VERSION_DB = "versions.db";
     private static final int MAX_VERSIONS = 10; // Maximum versions to keep per file
 
     private final String storagePath;
     private final Path versionDir;
+    private final Path versionDbFile;
     private final ConcurrentHashMap<String, List<Version>> versionCache;
 
     public VersionManager(String storagePath) {
         this.storagePath = storagePath;
         this.versionDir = Paths.get(storagePath, VERSION_DIR);
+        this.versionDbFile = versionDir.resolve(VERSION_DB);
         this.versionCache = new ConcurrentHashMap<>();
         initializeVersionDirectory();
+        loadVersions();
     }
 
     private void initializeVersionDirectory() {
         try {
             Files.createDirectories(versionDir);
+            if(!Files.exists(versionDbFile)) {
+                Files.createFile(versionDbFile);
+            }
             LOGGER.info("Version directory initiated at: " + versionDir);
         } catch (IOException e) {
             LOGGER.severe("Failed to initialize version directory: " + e.getMessage());
@@ -42,7 +48,24 @@ public class VersionManager {
         }
     }
 
+    public void loadVersions() {
+        try {
+            if(Files.exists(versionDbFile) && Files.size(versionDbFile) > 0) {
+                try(ObjectInputStream ois = new ObjectInputStream(new FileInputStream(versionDbFile.toFile()))) {
+                    @SuppressWarnings("unchecked")
+                    ConcurrentHashMap<String, List<Version>> loaded = (ConcurrentHashMap<String, List<Version>>) ois.readObject();
+                    versionCache.putAll(loaded);
+                    LOGGER.info("Loaded " + versionCache.size() + " version entries from disk");
+                }
+            }
+        } catch(Exception e) {
+            LOGGER.warning("Could not load versions from disk: " + e.getMessage());
+        }
+    }
+
     public Version createVersion(String filePath, String creator, String comment) throws IOException {
+        filePath = filePath.replaceAll("^/+","");
+
         Path originalFile = Paths.get(storagePath, filePath);
         if(!Files.exists(originalFile)) {
             throw new FileNotFoundException("File not found: " + filePath);
@@ -72,12 +95,29 @@ public class VersionManager {
         // Update version cache
         updateVersionCache(filePath, version);
 
+        // Save to disk
+        saveVersions();
+
         LOGGER.info("Created new version " + versionId + " for file: " + filePath);
         return version;
     }
 
+    public void saveVersions() {
+        try(ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(versionDbFile.toFile()))){
+            oos.writeObject(versionCache);
+            LOGGER.info("Saved versions to disk");
+        } catch(Exception e) {
+            LOGGER.severe("Failed to save versions to disk: " + e.getMessage());
+        }
+    }
+
     public List<Version> getVersions(String filePath) {
-        return versionCache.getOrDefault(filePath, new ArrayList<>());
+        filePath = filePath.replaceAll("^/+","");
+
+        List<Version> versions = versionCache.get(filePath);
+        LOGGER.info("Retrieving versions for " + filePath + ": found " +
+                (versions!=null ? versions.size() : 0) + " versions");
+        return versions != null ? new ArrayList<>(versions) : new ArrayList<>();
     }
 
     public void restoreVersion(String filePath, String versionId) throws IOException {
@@ -108,6 +148,7 @@ public class VersionManager {
             Version oldVersion = versions.remove(versions.size()-1);
             deleteOldVersion(filePath, oldVersion.getVersionId());
         }
+        LOGGER.info("Updated version cache for " + filePath + ". Total versions: " + versions.size());
     }
 
     private void deleteOldVersion(String filePath, String versionId) {
