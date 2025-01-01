@@ -11,7 +11,7 @@ import java.util.logging.Logger;
 
 public class ReplicationManager {
     private static final Logger LOGGER = Logger.getLogger(ReplicationManager.class.getName());
-    private static final int REPLICATION_FACTOR = 3;
+    public static final int REPLICATION_FACTOR = 3;
 
     private final Map<String, Set<Node>> fileToNodesMap; // Maps files to their replica nodes
     private final Map<String, byte[]> fileDataCache; // Temporary cache for file data
@@ -100,5 +100,9 @@ public class ReplicationManager {
         } catch(Exception e) {
             throw new RuntimeException("Failed to store file on node: " + node.getNodeId());
         }
+    }
+
+    public Set<Node> getFileReplicas(String fileName) {
+        return fileToNodesMap.getOrDefault(fileName, Collections.emptySet());
     }
 }

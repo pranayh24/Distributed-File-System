@@ -28,4 +28,9 @@ public class Node implements Serializable {
                 ", isAlive=" + isAlive +
                 '}';
     }
+
+    public void updateHeartbeat() {
+        this.lastHeartbeat = System.currentTimeMillis();
+        this.isAlive = true;
+    }
 }

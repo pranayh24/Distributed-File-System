@@ -66,4 +66,14 @@ public class HeartbeatMonitor {
             Thread.currentThread().interrupt();
         }
     }
+
+    public void recieveHeartbeat(String nodeId) {
+        Node node = nodes.get(nodeId);
+        if (node != null) {
+            node.updateHeartbeat();
+            LOGGER.info("Heartbeat received from node: " + nodeId);
+        } else {
+            LOGGER.warning("Received heartbeat from unknown node: " + nodeId);
+        }
+    }
 }
