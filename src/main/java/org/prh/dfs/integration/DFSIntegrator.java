@@ -1,5 +1,6 @@
 package org.prh.dfs.integration;
 
+import lombok.Getter;
 import org.prh.dfs.fault.FailureRecoveryManager;
 import org.prh.dfs.fault.HeartbeatMonitor;
 import org.prh.dfs.model.Node;
@@ -12,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
+@Getter
 public class DFSIntegrator {
     private static final Logger LOGGER = Logger.getLogger(DFSIntegrator.class.getName());
 

@@ -1,5 +1,6 @@
 package org.prh.dfs.server;
 
+import org.prh.dfs.integration.DFSIntegrator;
 import org.prh.dfs.model.*;
 import org.prh.dfs.utils.FileUtils;
 import org.prh.dfs.versioning.VersionManager;
@@ -13,7 +14,10 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.FileHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -30,14 +34,16 @@ public class ServerHandler implements Runnable{
     private final DirectoryHandler directoryHandler;
     private final VersionManager versionManager;
     private FileOperationResult result;
+    private final DFSIntegrator dfsIntegrator;
 
     // Thread-safe maps for file operations
     private static final ConcurrentHashMap<String, FileOutputStream> activeFiles = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String,Object> fileLocks = new ConcurrentHashMap<>();
 
-    public ServerHandler(Socket clientSocket, String storagePath) {
+    public ServerHandler(Socket clientSocket, String storagePath, DFSIntegrator dfsIntegrator) {
         this.clientSocket = clientSocket;
         this.storagePath = storagePath;
+        this.dfsIntegrator = dfsIntegrator;
         this.directoryHandler = new DirectoryHandler(storagePath);
         this.versionManager = new VersionManager(storagePath);
         LOGGER.info(() -> "Created new ServerHandler for client: " + clientSocket.getInetAddress());
@@ -199,16 +205,45 @@ public class ServerHandler implements Runnable{
      * @throws IOException
      */
     private void handleFileChunk(FileChunk chunk, ObjectOutputStream oos) throws IOException {
+        String filePath = chunk.getFileName();
+        byte[] data = chunk.getData();
+
+        boolean savedLocally = saveChunkLocally(chunk);
+
+        if(savedLocally && isLastChunk(chunk)) {
+            CompletableFuture<Boolean> replicationFuture =
+                    dfsIntegrator.writeFile(filePath, Files.readAllBytes(Paths.get(storagePath, filePath)));
+
+            try {
+                boolean replicationSuccess = replicationFuture.get(30, TimeUnit.SECONDS);
+                oos.writeObject(new FileOperationResult(replicationSuccess,
+                        replicationSuccess ? "File uploaded and replicated successfully" : "Replication failed"));
+            } catch(Exception e) {
+                LOGGER.severe("Replication failed: " + e.getMessage());
+                oos.writeObject(new FileOperationResult(false, "Replication failed: " + e.getMessage()));
+            }
+        } else {
+            oos.writeObject(new FileOperationResult(savedLocally, savedLocally ? "Chunk saved successfully" : "Failed to save chunk"));
+        }
+
+        /* */
+    }
+
+    private boolean saveChunkLocally(FileChunk chunk) {
         LOGGER.info(() -> String.format("Received chunk %d for file: %s",
                 chunk.getChunkNumber(), chunk.getFileName()));
 
         if(!validateCheckSum(chunk)) {
-            oos.writeObject("CHECKSUM_MISMATCH");
-            return;
+            return false;
+        }
+        try {
+            processChunk(chunk);
+            return true;
+        } catch (IOException e) {
+            LOGGER.severe("Failed to save chunk locally: " + e.getMessage());
+            return false;
         }
 
-        processChunk(chunk);
-        oos.writeObject("CHUNK_RECEIVED");
     }
 
     /**

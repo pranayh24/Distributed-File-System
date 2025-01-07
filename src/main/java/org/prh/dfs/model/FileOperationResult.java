@@ -13,6 +13,12 @@ public class FileOperationResult implements Serializable {
     private final Object data;
     private final String errorDetails;
 
+    public FileOperationResult(boolean success, String message) {
+        this.success = success;
+        this.message = message;
+        this.data = null;
+        this.errorDetails = null;
+    }
     public FileOperationResult(boolean success, String message, Object data, String errorDetails) {
         this.success = success;
         this.message = message;
@@ -31,6 +37,7 @@ public class FileOperationResult implements Serializable {
     public static FileOperationResult error(String message) {
         return new FileOperationResult(false, message, null,null);
     }
+
 
     public static FileOperationResult error(String message, String errorDetails) {
         return new FileOperationResult(false, message, null, errorDetails);

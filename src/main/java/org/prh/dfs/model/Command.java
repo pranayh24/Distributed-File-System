@@ -27,7 +27,12 @@ public class Command implements Serializable {
         LIST_VERSIONS,
         RESTORE_VERSION,
         COMPARE_VERSIONS,
-        DELETE_VERSION
+        DELETE_VERSION,
+
+        SHOW_REPLICATION_STATUS, // Replication command
+        FORCE_REPLICATION,
+        SHOW_NODE_HEALTH,
+        HEARTBEAT
     }
 
     private final Type type;
@@ -42,9 +47,14 @@ public class Command implements Serializable {
     private boolean includeMetadata;  // Whether to include version metadata
     private int maxVersions;          // Maximum versions to retrieve/keep
 
+
     // Basic constructor for simple commands
     public Command(Type type, String path) {
         this(type, path, null);
+    }
+
+    public Command(Type type) {
+        this(type, null);
     }
 
     // Constructor for operations requiring two paths

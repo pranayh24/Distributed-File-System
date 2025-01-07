@@ -4,15 +4,18 @@ import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
+import org.prh.dfs.fault.HeartbeatSender;
 import org.prh.dfs.model.*;
 import org.prh.dfs.utils.FileUtils;
 
 import java.io.*;
 import java.net.Socket;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 /**
@@ -42,6 +45,8 @@ public class DFSClient {
     private final VersionOperations versionOps;
     private final SimpleDateFormat dateFormat;
     private final LineReader lineReader;
+    private final HeartbeatSender heartbeatSender;
+    private final ScheduledExecutorService scheduler;
 
     /**
      * Constructs a new DFS client with specified server connection details.
@@ -63,6 +68,21 @@ public class DFSClient {
         this.lineReader = LineReaderBuilder.builder()
                 .terminal(terminal)
                 .build();
+
+        this.scheduler = Executors.newScheduledThreadPool(1);
+        this.heartbeatSender = new HeartbeatSender(serverAddress, serverPort);
+
+        startHeartBeat();
+    }
+
+    private void startHeartBeat() {
+        scheduler.scheduleAtFixedRate(() -> {
+            try {
+                heartbeatSender.sendHeartbeat();
+            } catch (Exception e) {
+                LOGGER.warning("Failed to send heartbeat: " + e.getMessage());
+            }
+        }, 0, 5, TimeUnit.SECONDS);
     }
 
     /**
@@ -379,13 +399,87 @@ public class DFSClient {
         System.out.printf("] %.1f%%", (current * 100.0) / total);
     }
 
+    private void showReplicationStatus() {
+        try(Socket socket = new Socket(serverAddress, serverPort);
+            ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
+            ObjectInputStream ois = new ObjectInputStream(socket.getInputStream())) {
+
+            // Read the file path from the user
+            String filePath = lineReader.readLine("Enter file path to show replication status: ");
+            String normalizedPath = normalizePath(filePath);
+
+            // Create the command object
+            Command command = new Command(Command.Type.SHOW_REPLICATION_STATUS, normalizedPath);
+            oos.writeObject(command);
+            oos.flush();
+
+            // Read te server's response
+            Object response = ois.readObject();
+            if(response instanceof Command) {
+                System.out.println(ANSI_BLUE + "Replication status: " + response.toString() + ANSI_RESET);
+            } else {
+                System.out.println(ANSI_YELLOW + "Unexpected response from server." + ANSI_RESET);
+            }
+
+        } catch (Exception e) {
+            System.out.println(ANSI_YELLOW + "Error showing replication: " + e.getMessage() + ANSI_RESET);
+        }
+    }
+
+    private void showNodeHealth() {
+        try(Socket socket = new Socket(serverAddress, serverPort);
+           ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
+           ObjectInputStream ois = new ObjectInputStream(socket.getInputStream())) {
+
+            Command command = new Command(Command.Type.SHOW_NODE_HEALTH);
+            oos.writeObject(command);
+            oos.flush();
+
+            Object response = ois.readObject();
+
+            if(response instanceof Command) {
+                System.out.println(ANSI_BLUE + "Node health: " + response.toString() + ANSI_RESET);
+            } else {
+                System.out.println(ANSI_YELLOW + "Unexpected response from server." + ANSI_RESET);
+            }
+        } catch(Exception e) {
+            System.out.println(ANSI_YELLOW + "Error reading node health: " + e.getMessage() + ANSI_RESET);
+        }
+    }
+
+    private void forceReplication() {
+        try(Socket socket = new Socket(serverAddress, serverPort);
+            ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
+            ObjectInputStream ois = new ObjectInputStream(socket.getInputStream())) {
+
+            // Read the file path from the user
+            String filePath = lineReader.readLine("Enter file path to force replication: ");
+            String normalizedPath = normalizePath(filePath);
+
+            // Create the command object
+            Command command = new Command(Command.Type.FORCE_REPLICATION, normalizedPath);
+            oos.writeObject(command);
+            oos.flush();
+
+            // Read the server's response
+            Object response = ois.readObject();
+            if(response instanceof Command) {
+                System.out.println(ANSI_BLUE + "Replication status: " + response.toString() + ANSI_RESET);
+            } else {
+                System.out.println(ANSI_YELLOW + "Unexpected response from server." + ANSI_RESET);
+            }
+        } catch (Exception e) {
+            System.out.println(ANSI_YELLOW + "Error  forcing replication: " + e.getMessage() + ANSI_RESET);
+        }
+    }
+
     /**
      * Displays the main menu of the DFS client.
      */
     private void showPrompt() {
         System.out.println("\n" + ANSI_GREEN + "╔════════════════════════════════════╗");
         System.out.println("║     Distributed File System        ║");
-        System.out.println("╠════════════════════════════════════╣");
+        System.out.println("╠════════════════════════════════════-╣");
         System.out.println("║ 1. List Directory                  ║");
         System.out.println("║ 2. Create Directory                ║");
         System.out.println("║ 3. Delete Directory                ║");
@@ -396,6 +490,9 @@ public class DFSClient {
         System.out.println("║ 8. List Versions                   ║");
         System.out.println("║ 9. Restore Version                 ║");
         System.out.println("║ 10. Update File and Create Version ║");
+        System.out.println("║ 11. Show Replication Status        ║");
+        System.out.println("║ 12. Show Node Health               ║");
+        System.out.println("║ 13. Force Replication              ║");
         System.out.println("║ 0. Exit                            ║");
         System.out.println("╚════════════════════════════════════╝" + ANSI_RESET);
     }
@@ -449,6 +546,9 @@ public class DFSClient {
                     case "8" -> listVersions();
                     case "9" -> restoreVersion();
                     case "10" -> updateFile();
+                    case "11" -> showReplicationStatus();
+                    case "12" -> showNodeHealth();
+                    case "13" -> forceReplication();
                     case "0" -> {
                         System.out.println(ANSI_GREEN+ "Thank you for using DFS. Goodbye!" + ANSI_RESET);
                         return;
