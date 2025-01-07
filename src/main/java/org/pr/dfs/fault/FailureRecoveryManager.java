@@ -64,4 +64,4 @@ public class FailureRecoveryManager implements NodeFailureHandler{
     public void trackFile(String nodeId, String fileName) {
         nodeToFilesMap.computeIfAbsent(nodeId, k-> new HashSet<>()).add(fileName);
     }
-}
+}*/

@@ -1,4 +1,4 @@
-package org.pr.dfs.fault;
+/**package org.pr.dfs.fault;
 
 import org.pr.dfs.model.Node;
 
@@ -76,4 +76,4 @@ public class HeartbeatMonitor {
             LOGGER.warning("Received heartbeat from unknown node: " + nodeId);
         }
     }
-}
+}*/
