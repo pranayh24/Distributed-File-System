@@ -562,6 +562,15 @@ public class DFSClient {
             }
         }
     }
+    private void monitorNodeHealth() {
+        scheduler.scheduleAtFixedRate(() -> {
+            try {
+                showNodeHealth();
+            } catch (Exception e) {
+                LOGGER.warning("Failed to check node health: " + e.getMessage());
+            }
+        }, 0, 30, TimeUnit.SECONDS);
+    }
 
     public static void main(String[] args) {
         try {
