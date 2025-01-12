@@ -1,7 +1,5 @@
 package org.pr.dfs.server;
 
-import org.pr.dfs.fault.HeartbeatMonitor;
-import org.pr.dfs.integration.DFSIntegrator;
 import org.pr.dfs.replication.ReplicationManager;
 
 import java.io.File;
@@ -24,31 +22,20 @@ public class FileServer {
     private static final int THREAD_POOL_SIZE = Runtime.getRuntime().availableProcessors();
     private static final int SHUTDOWN_TIMEOUT_SECONDS = 60;
 
-    private final DFSIntegrator dfsIntegrator;
-    private final ReplicationManager replicationManager;
-    private final HeartbeatMonitor heartbeatMonitor;
-
     private final int port;
     private final String storagePath;
     private final ExecutorService executorService;
     private ServerSocket serverSocket;
     private boolean running = true;
-    private final String nodeId;
 
     public FileServer(int port, String storagePath) {
         this.port = port;
         this.storagePath = storagePath;
         this.executorService = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
 
-        this.dfsIntegrator = new DFSIntegrator();
-        this.replicationManager = dfsIntegrator.getReplicationManager();
-        this.heartbeatMonitor = dfsIntegrator.getHeartbeatMonitor();
-
-        this.nodeId = dfsIntegrator.addNode("localhost", port);
 
         initializeLogging();
         initializeStorageDirectory();
-        initializeReplication();
     }
 
     private void initializeLogging() {
@@ -82,16 +69,6 @@ public class FileServer {
         LOGGER.info("Storage directory initialized at:" + storagePath);
     }
 
-    public void initializeReplication() {
-        dfsIntegrator.initializeSystem();
-
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            dfsIntegrator.shutdown();
-            stop();
-        }));
-
-
-    }
 
     public void start() {
         try {
@@ -106,8 +83,7 @@ public class FileServer {
                     Socket clientSocket = serverSocket.accept();
                     LOGGER.info("Client connected: " + clientSocket.getInetAddress());
 
-                    // Submit client handling task to thread pool
-                    executorService.submit(new ServerHandler(clientSocket, storagePath, dfsIntegrator));
+
                 } catch (Exception e) {
                     if(running) {
                         LOGGER.log(Level.SEVERE, "Error handling client request", e);
