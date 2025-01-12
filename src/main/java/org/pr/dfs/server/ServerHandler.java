@@ -3,6 +3,9 @@ package org.pr.dfs.server;
 import org.pr.dfs.integration.DFSIntegrator;
 import org.pr.dfs.model.*;
 import org.pr.dfs.model.*;
+import org.pr.dfs.replication.FaultToleranceManager;
+import org.pr.dfs.replication.NodeManager;
+import org.pr.dfs.replication.ReplicationManager;
 import org.pr.dfs.utils.FileUtils;
 import org.pr.dfs.versioning.VersionManager;
 
@@ -35,6 +38,8 @@ public class ServerHandler implements Runnable{
     private final VersionManager versionManager;
     private FileOperationResult result;
     private final DFSIntegrator dfsIntegrator;
+    private final ReplicationManager replicationManager;
+    private final FaultToleranceManager faultToleranceManager;
 
     // Thread-safe maps for file operations
     private static final ConcurrentHashMap<String, FileOutputStream> activeFiles = new ConcurrentHashMap<>();
@@ -46,6 +51,8 @@ public class ServerHandler implements Runnable{
         this.dfsIntegrator = dfsIntegrator;
         this.directoryHandler = new DirectoryHandler(storagePath);
         this.versionManager = new VersionManager(storagePath);
+        this.replicationManager = new ReplicationManager(NodeManager nodeManager);
+        this.faultToleranceManager = new FaultToleranceManager(replicationManager);
         LOGGER.info(() -> "Created new ServerHandler for client: " + clientSocket.getInetAddress());
     }
 
@@ -223,17 +230,7 @@ public class ServerHandler implements Runnable{
         boolean savedLocally = saveChunkLocally(chunk);
 
         if(savedLocally && isLastChunk(chunk)) {
-            CompletableFuture<Boolean> replicationFuture =
-                    dfsIntegrator.writeFile(filePath, Files.readAllBytes(Paths.get(storagePath, filePath)));
-
-            try {
-                boolean replicationSuccess = replicationFuture.get(30, TimeUnit.SECONDS);
-                oos.writeObject(new FileOperationResult(replicationSuccess,
-                        replicationSuccess ? "File uploaded and replicated successfully" : "Replication failed"));
-            } catch(Exception e) {
-                LOGGER.severe("Replication failed: " + e.getMessage());
-                oos.writeObject(new FileOperationResult(false, "Replication failed: " + e.getMessage()));
-            }
+            replicationManager.replicateFile(chunk.getFileName());
         } else {
             oos.writeObject(new FileOperationResult(savedLocally, savedLocally ? "Chunk saved successfully" : "Failed to save chunk"));
         }
