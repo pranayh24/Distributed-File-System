@@ -57,4 +57,21 @@ public class ReplicationManager {
 
         }
     }
+
+    public void handleFileDeletion(String filePath) {
+        List<Node> nodes = fileToNodesMap.get(filePath);
+        if (nodes != null) {
+            for (Node node : nodes) {
+                try {
+                    node.deleteFile(filePath);
+                    LOGGER.info("Deleted file " + filePath + " from node " + node.getNodeId());
+                } catch (Exception e) {
+                    LOGGER.warning("Failed to delete file " + filePath + " from node " + node.getNodeId() + ": " + e.getMessage());
+                }
+            }
+            fileToNodesMap.remove(filePath);
+        } else {
+            LOGGER.warning("No nodes found for file " + filePath);
+        }
+    }
 }
