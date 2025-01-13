@@ -19,6 +19,13 @@ public class FileOperationResult implements Serializable {
         this.data = null;
         this.errorDetails = null;
     }
+
+    public FileOperationResult(boolean success, String message, Object data) {
+        this.success = success;
+        this.message = message;
+        this.data = data;
+        this.errorDetails = null;
+    }
     public FileOperationResult(boolean success, String message, Object data, String errorDetails) {
         this.success = success;
         this.message = message;

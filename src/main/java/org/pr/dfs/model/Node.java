@@ -2,6 +2,7 @@ package org.pr.dfs.model;
 
 import lombok.Data;
 
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.Serializable;
@@ -36,7 +37,6 @@ public class Node {
         this.lastHeartbeat = System.currentTimeMillis();
     }
 
-
     public void transferFile(String filePath, byte[] data) throws Exception {
         Path localFilePath = Paths.get(filePath);
         try {
@@ -58,11 +58,22 @@ public class Node {
 
     public byte[] getFile(String filePath) throws Exception {
         Path localFilePath = Paths.get(filePath);
-        try{
+        try {
             return Files.readAllBytes(localFilePath);
         } catch (Exception e) {
             LOGGER.severe("Error reading file: " + filePath + " from node: " + nodeId + ": " + e.getMessage());
             throw new Exception("Failed to retrieve file from node storage", e);
+        }
+    }
+
+    public void deleteFile(String filePath) throws Exception {
+        Path localFilePath = Paths.get(filePath);
+        try {
+            Files.deleteIfExists(localFilePath);
+            LOGGER.info("File deleted successfully from " + filePath + " on node " + nodeId);
+        } catch (Exception e) {
+            LOGGER.severe("Error deleting file: " + filePath + " from node: " + nodeId + ": " + e.getMessage());
+            throw new Exception("Failed to delete file from node storage", e);
         }
     }
 }
