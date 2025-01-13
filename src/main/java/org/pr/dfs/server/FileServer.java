@@ -1,12 +1,17 @@
 package org.pr.dfs.server;
 
+import org.pr.dfs.model.Node;
+import org.pr.dfs.replication.FaultToleranceManager;
+import org.pr.dfs.replication.NodeManager;
 import org.pr.dfs.replication.ReplicationManager;
 
 import java.io.File;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.FileHandler;
 import java.util.logging.Level;
@@ -21,10 +26,16 @@ public class FileServer {
     private static final Logger LOGGER = Logger.getLogger(FileServer.class.getName());
     private static final int THREAD_POOL_SIZE = Runtime.getRuntime().availableProcessors();
     private static final int SHUTDOWN_TIMEOUT_SECONDS = 60;
+    private static final int REPLICATION_FACTOR = 3;
+    private static final long HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
 
     private final int port;
     private final String storagePath;
     private final ExecutorService executorService;
+    private final NodeManager nodeManager;
+    private final ReplicationManager replicationManager;
+    private final FaultToleranceManager faultToleranceManager;
+    private final ScheduledExecutorService healthCheckExecutor;
     private ServerSocket serverSocket;
     private boolean running = true;
 
@@ -32,10 +43,14 @@ public class FileServer {
         this.port = port;
         this.storagePath = storagePath;
         this.executorService = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+        this.healthCheckExecutor = Executors.newScheduledThreadPool(1);
 
-
+        this.nodeManager = new NodeManager();
+        this.replicationManager = new ReplicationManager(REPLICATION_FACTOR, nodeManager);
+        this.faultToleranceManager = new FaultToleranceManager(nodeManager, replicationManager);
         initializeLogging();
         initializeStorageDirectory();
+        startHealthCheck();
     }
 
     private void initializeLogging() {
@@ -69,13 +84,28 @@ public class FileServer {
         LOGGER.info("Storage directory initialized at:" + storagePath);
     }
 
+    private void startHealthCheck() {
+        healthCheckExecutor.scheduleAtFixedRate(() -> {
+            try{
+                List<Node> nodes = nodeManager.getHealthyNodes();
+                for(Node node : nodes) {
+                    if(!node.isHealthy()) {
+                        LOGGER.warning("Node " + node.getNodeId() + " is not healthy");
+                        faultToleranceManager.onNodeFailure(node.getNodeId());
+                    }
+                }
+            } catch(Exception e){
+                LOGGER.log(Level.SEVERE, "Error starting health check", e);
+            }
+        }, HEALTH_CHECK_INTERVAL, HEALTH_CHECK_INTERVAL, TimeUnit.MILLISECONDS);
+    }
 
     public void start() {
         try {
             serverSocket = new ServerSocket(port);
             LOGGER.info("File server started on port: " + port);
 
-            Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
+            //Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
 
             while(running) {
                 try {
@@ -83,7 +113,9 @@ public class FileServer {
                     Socket clientSocket = serverSocket.accept();
                     LOGGER.info("Client connected: " + clientSocket.getInetAddress());
 
-
+                    ServerHandler serverHandler = new ServerHandler(clientSocket, storagePath,
+                            nodeManager, replicationManager, faultToleranceManager);
+                    executorService.execute(serverHandler);
                 } catch (Exception e) {
                     if(running) {
                         LOGGER.log(Level.SEVERE, "Error handling client request", e);
@@ -95,6 +127,12 @@ public class FileServer {
         } finally {
             stop();
         }
+    }
+
+    public void registerNode(String address, int port) {
+        Node node = new Node(address, port);
+        nodeManager.registerNode(node.getNodeId(), node);
+        LOGGER.info("New node registered: " + node.getNodeId());
     }
 
     public void stop() {
