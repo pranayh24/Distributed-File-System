@@ -2,6 +2,12 @@
 
 A Java-based distributed file system implementation with a modern command-line interface. This system allows for file and directory operations across a network, making it easy to manage files in a distributed environment.
 
+### Important Notice
+
+- This project is currently under development and not yet finished. As a result, users may encounter errors or incomplete features.
+
+
+
 ## 🌟 Features
 
 ### Core Functionality
