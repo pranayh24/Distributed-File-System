@@ -32,7 +32,8 @@ public class Command implements Serializable {
         SHOW_REPLICATION_STATUS, // Replication command
         FORCE_REPLICATION,
         SHOW_NODE_HEALTH,
-        HEARTBEAT
+        HEARTBEAT,
+        ADD_NODE
     }
 
     private final Type type;
