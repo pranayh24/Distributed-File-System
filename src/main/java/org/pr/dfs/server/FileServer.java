@@ -129,11 +129,6 @@ public class FileServer {
         }
     }
 
-    public void registerNode(String address, int port) {
-        Node node = new Node(address, port);
-        nodeManager.registerNode(node.getNodeId(), node);
-        LOGGER.info("New node registered: " + node.getNodeId());
-    }
 
     public void stop() {
         if(!running) {
