@@ -145,6 +145,9 @@ public class ServerHandler implements Runnable{
                     handleShowNodeHealth(oos);
                     break;
 
+                case ADD_NODE:
+                    registerNode();
+
                 default:
                     sendError(oos, "Unsupported command type: " + command.getType());
             }
@@ -612,7 +615,7 @@ public class ServerHandler implements Runnable{
         }
     }
 
-    private static class ReplicationStatus implements Serializable {
+    public static class ReplicationStatus implements Serializable {
         private static final long serialVersionUID = 1L;
 
         enum Status {
@@ -651,7 +654,7 @@ public class ServerHandler implements Runnable{
         }
     }
 
-    private static class NodeHealthInfo implements Serializable {
+    public static class NodeHealthInfo implements Serializable {
         private static final long serialVersionUID = 1L;
 
         private final boolean healthy;
@@ -664,4 +667,11 @@ public class ServerHandler implements Runnable{
             this.hostedFilesCount = hostedFilesCount;
         }
     }
+
+    public void registerNode(String address, int port) {
+        Node node = new Node(address, port);
+        nodeManager.registerNode(node.getNodeId(), node);
+        LOGGER.info("New node registered: " + node.getNodeId());
+    }
+
 }
