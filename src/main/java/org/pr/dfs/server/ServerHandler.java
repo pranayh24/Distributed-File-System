@@ -7,7 +7,6 @@ import org.pr.dfs.versioning.VersionManager;
 
 import java.io.*;
 import java.net.Socket;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -144,9 +143,6 @@ public class ServerHandler implements Runnable{
                 case SHOW_NODE_HEALTH:
                     handleShowNodeHealth(oos);
                     break;
-
-                case ADD_NODE:
-                    registerNode();
 
                 default:
                     sendError(oos, "Unsupported command type: " + command.getType());
