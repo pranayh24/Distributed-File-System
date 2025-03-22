@@ -89,7 +89,7 @@ public class DFSClient {
         String cleanPath = path.replaceAll("^\"|\"$", "");
 
         // For local paths, use system-specific handling
-        if (path.contains(":")) {  // Windows absolute path detected
+        if (path.contains(":")) {  // Windows absolute path
             return Paths.get(cleanPath).toString();
         }
 

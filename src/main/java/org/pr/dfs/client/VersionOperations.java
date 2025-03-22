@@ -14,12 +14,15 @@ import java.util.logging.Logger;
 public class VersionOperations {
     private static final Logger LOGGER = Logger.getLogger(VersionOperations.class.getName());
 
-    private final String serverAddress;
-    private final int port;
+    private String serverAddress;
+    private int port;
 
     public VersionOperations(String serverAddress, int port) {
         this.serverAddress = serverAddress;
         this.port = port;
+    }
+
+    public VersionOperations(DFSClientCommunicator communicator) {
     }
 
     public FileOperationResult createVersion(String filePath, String comment) {

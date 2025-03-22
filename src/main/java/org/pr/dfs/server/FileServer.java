@@ -26,8 +26,10 @@ public class FileServer {
     private static final Logger LOGGER = Logger.getLogger(FileServer.class.getName());
     private static final int THREAD_POOL_SIZE = Runtime.getRuntime().availableProcessors();
     private static final int SHUTDOWN_TIMEOUT_SECONDS = 60;
-    private static final int REPLICATION_FACTOR = 3;
+    private static final int DEFAULT_REPLICATION_FACTOR = 3;
     private static final long HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
+    private static final long METRICS_COLLECTION_INTERVAL = 60000; // 60 seconds
+    private static final long RECOVERY_CHECK_INTERVAL = 300000; // 5 minutes
 
     private final int port;
     private final String storagePath;
@@ -46,7 +48,7 @@ public class FileServer {
         this.healthCheckExecutor = Executors.newScheduledThreadPool(1);
 
         this.nodeManager = new NodeManager();
-        this.replicationManager = new ReplicationManager(REPLICATION_FACTOR, nodeManager);
+        this.replicationManager = new ReplicationManager(DEFAULT_REPLICATION_FACTOR, nodeManager);
         this.faultToleranceManager = new FaultToleranceManager(nodeManager, replicationManager);
         initializeLogging();
         initializeStorageDirectory();
