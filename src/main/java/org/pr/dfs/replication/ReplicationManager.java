@@ -1,6 +1,7 @@
 package org.pr.dfs.replication;
 
 
+import org.pr.dfs.model.FileOperationResult;
 import org.pr.dfs.model.Node;
 import org.pr.dfs.model.ReplicationStatus;
 
@@ -179,11 +180,152 @@ public class ReplicationManager {
         return false;
     }
 
-    private void addFileToNodeMapping(String filePath, String nodeId) {
+    public boolean handleFileDeletion(String filePath) {
+        ReplicationStatus status = fileReplicationStatus.get(filePath);
+        if(status != null || status.getNodeIds().isEmpty()) {
+            LOGGER.warning("No replication information found for file " + filePath);
+            fileReplicationStatus.remove(filePath);
+            return true;
+        }
+
+        boolean allSuccessful = true;
+
+        for(String nodeId : status.getNodeIds()) {
+            try {
+                Node node = nodeManager.getNodeById(nodeId);
+                if(node == null) {
+                    LOGGER.warning("Node " + nodeId + " not found for file deletion");
+                    continue;
+                }
+
+                if(node.deleteFile(filePath)) {
+                    LOGGER.info("Successfully deleted file " + filePath + " from node " + nodeId);
+                    removeFileFromNodeMapping(filePath, nodeId);
+                } else {
+                    LOGGER.warning("Failed to delete file " + filePath + " from node " + nodeId);
+                    allSuccessful = false;
+                }
+            } catch(Exception e) {
+                LOGGER.log(Level.WARNING, "Error deleting file " + filePath + " from node " + nodeId, e);
+                allSuccessful = false;
+            }
+        }
+
+        // Clean up replication status
+        fileReplicationStatus.remove(filePath);
+
+        return allSuccessful;
     }
 
+    public ReplicationStatus getReplicationStatus(String filePath) {
+        return fileReplicationStatus.computeIfAbsent(filePath, path -> {
+            ReplicationStatus status = new ReplicationStatus(path, defaultReplicationFactor);
 
-    public void handleFileDeletion(String filePath) {
+            for(Node node : nodeManager.getHealthyNodes()) {
+                if(node.hasFile(filePath)) {
+                    status.addNode(node);
+                    addFileToNodeMapping(filePath, node.getNodeId());
+                }
+            }
+            return status;
+        });
+    }
 
+    private void addFileToNodeMapping(String filePath, String nodeId) {
+        nodeToFilesMap.computeIfAbsent(nodeId, k -> ConcurrentHashMap.newKeySet()).add(filePath);
+    }
+
+    private void removeFileFromNodeMapping(String filePath, String nodeId) {
+        Set<String> files = nodeToFilesMap.get(nodeId);
+        if(files != null) {
+            files.remove(filePath);
+        }
+    }
+
+    public Set<String> getFilesOnNode(String nodeId) {
+        return nodeToFilesMap.getOrDefault(nodeId, Collections.emptySet());
+    }
+
+    public CompletableFuture<FileOperationResult> recoverFromNodeFailure(String nodeId) {
+        CompletableFuture<FileOperationResult> future = new CompletableFuture<>();
+
+        replicationExecutor.submit(() -> {
+            try {
+                Set<String> filesToRecover = new HashSet<>(getFilesOnNode(nodeId));
+                LOGGER.info("Starting recovery for node " + nodeId + " with " + filesToRecover.size() + " files");
+
+                // Create a list to track individual file recovery results
+                List<CompletableFuture<Boolean>> recoveryTasks = new ArrayList<>();
+
+                for(String filePath : filesToRecover) {
+
+                    CompletableFuture<Boolean> task = replicateFile(filePath);
+                    recoveryTasks.add(task);
+                }
+
+                // Wait for all recovery tasks to complete
+                CompletableFuture<Void> allTasks= CompletableFuture.allOf(recoveryTasks.toArray(new CompletableFuture[0]));
+
+                try {
+                    allTasks.get(5, TimeUnit.SECONDS);
+                } catch(TimeoutException te) {
+                    LOGGER.warning("Recovery operation timed out for " + nodeId);
+                }
+
+                // Count successful recoveries
+                long successCount = recoveryTasks.stream()
+                        .filter(task -> {
+                            try {
+                                return task.isDone() && !task.isCompletedExceptionally() && task.get();
+                            } catch(Exception e) {
+                                return false;
+                            }
+                        })
+                        .count();
+
+                FileOperationResult result = new FileOperationResult(successCount > 0, "Recovered " + successCount + "/ " + filesToRecover.size() + " files from failed node " + nodeId);
+
+                LOGGER.info(result.getMessage());
+                future.complete(result);
+            } catch(Exception e) {
+                LOGGER.log(Level.SEVERE, "Error recovering from node " + nodeId, e);
+
+                FileOperationResult result = new FileOperationResult(false, "Recovery failed for node " + nodeId);
+                future.complete(result);
+            }
+        });
+
+        return future;
+    }
+
+    public void setReplicationFactor(String filePath, int replicationFactor) {
+        ReplicationStatus status = fileReplicationStatus.get(filePath);
+        status.setReplicationFactor(Math.max(1,replicationFactor));
+        fileReplicationStatus.put(filePath, status);
+    }
+
+    public void checkAndReplicateFiles() {
+        Map<String, ReplicationStatus> statusMap = new HashMap<>(fileReplicationStatus);
+
+        for(Map.Entry<String, ReplicationStatus> entry : statusMap.entrySet()) {
+            String filePath = entry.getKey();
+            ReplicationStatus status = entry.getValue();
+
+            if(status.getCurrentReplicas() < status.getReplicationFactor()) {
+                LOGGER.info("Auto-replicating " + filePath + " to meet factor " + status.getReplicationFactor());
+                replicateFile(filePath, status.getReplicationFactor());
+            }
+        }
+    }
+
+    public void shutdown() {
+        replicationExecutor.shutdown();
+        try {
+            if(!replicationExecutor.awaitTermination(30, TimeUnit.SECONDS));
+            replicationExecutor.shutdownNow();
+        } catch(InterruptedException ie) {
+            replicationExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }
