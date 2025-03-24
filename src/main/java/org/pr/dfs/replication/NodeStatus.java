@@ -1,17 +1,15 @@
 package org.pr.dfs.replication;
 
-import lombok.Getter;
+import lombok.Data;
 
-import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListSet;
 
+@Data
 public class NodeStatus {
     private long lastHeartbeat;
     private boolean healthy;
-    @Getter
-    private final Set<String> hostedFiles;
+    private Set<String> hostedFiles;
 
     public NodeStatus() {
         this.lastHeartbeat = System.currentTimeMillis();
@@ -31,4 +29,5 @@ public class NodeStatus {
         this.lastHeartbeat = System.currentTimeMillis();
         this.healthy = true;
     }
+
 }
