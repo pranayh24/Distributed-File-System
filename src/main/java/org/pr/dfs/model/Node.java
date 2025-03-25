@@ -2,21 +2,31 @@ package org.pr.dfs.model;
 
 import lombok.Data;
 
+import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.Serializable;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Logger;
 
 @Data
-public class Node {
+public class Node implements Serializable {
     private static final Logger LOGGER = Logger.getLogger(Node.class.getName());
+    private static final long serialVersionUID = 1L;
+
     private final String nodeId;
     private final String address;
     private final int port;
     private boolean healthy;
     private long lastHeartbeat;
+    private long availableDiskSpace;
+    private Set<String> hostedFiles;
+    private long startTime;
 
     public Node(String address, int port) {
         this.nodeId = UUID.randomUUID().toString();
@@ -24,10 +34,13 @@ public class Node {
         this.port = port;
         this.healthy = true;
         this.lastHeartbeat = System.currentTimeMillis();
+        this.availableDiskSpace = getDiskSpace();
+        this.hostedFiles = new HashSet<>();
+        this.startTime = System.currentTimeMillis();
     }
 
     public boolean isHealthy() {
-        return healthy && System.currentTimeMillis() - lastHeartbeat > 60000; // 60 second timeout
+        return healthy && System.currentTimeMillis() - lastHeartbeat <= 60000; // 60 second timeout
     }
 
     public void updateHeartbeat() {
@@ -45,13 +58,15 @@ public class Node {
                 fos.write(data);
             }
 
-            LOGGER.info("File transferred successfully to " + filePath + " on node " + nodeId);
+            // Add file to hosted files
+            hostedFiles.add(filePath);
 
+            LOGGER.info("File transferred successfully to " + filePath + " on node " + nodeId);
             return true;
         } catch (Exception e) {
             LOGGER.severe("Error transferring file: " + filePath + " to node: " + nodeId + ": " + e.getMessage());
+            return false;
         }
-        return false;
     }
 
     public byte[] getFile(String filePath) throws Exception {
@@ -68,24 +83,26 @@ public class Node {
         Path localFilePath = Paths.get(filePath);
         try {
             Files.deleteIfExists(localFilePath);
+
+            // Remove file from hosted files
+            hostedFiles.remove(filePath);
+
             LOGGER.info("File deleted successfully from " + filePath + " on node " + nodeId);
+            return true;
         } catch (Exception e) {
             LOGGER.severe("Error deleting file: " + filePath + " from node: " + nodeId + ": " + e.getMessage());
             return false;
         }
-        return true;
     }
 
-    public void setAvailableDiskSpace(long availableDiskSpace) {
-        // TODO document why this method is empty
-    }
-
-    public void setFileCount(int hostedFilesCount) {
-        // TODO document why this method is empty
-    }
-
-    public boolean hasFile(String filePath) {
-        return false;
+    private long getDiskSpace() {
+        try {
+            Path path = Paths.get(".");
+            return Files.getFileStore(path).getUsableSpace();
+        } catch (IOException e) {
+            LOGGER.warning("Failed to get disk space: " + e.getMessage());
+            return 0;
+        }
     }
 
 }
