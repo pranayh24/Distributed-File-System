@@ -91,6 +91,10 @@ public class FileServer {
     private long getDiskSpace() {
         try {
             Path path = Paths.get(storagePath);
+            // Create directory first if it doesn't exist
+            if (!Files.exists(path)) {
+                Files.createDirectories(path);
+            }
             return Files.getFileStore(path).getUsableSpace();
         } catch (IOException e) {
             LOGGER.log(Level.WARNING, "Failed to get disk space", e);

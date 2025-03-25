@@ -666,7 +666,7 @@ public class ServerHandler implements Runnable{
 
     public void registerNode(String address, int port) {
         Node node = new Node(address, port);
-        nodeManager.registerNode(node.getNodeId(), node);
+        nodeManager.registerNode(node);
         LOGGER.info("New node registered: " + node.getNodeId());
     }
 

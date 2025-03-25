@@ -161,7 +161,7 @@ public class NodeManager {
         Node node = nodes.get(nodeId);
         if(node != null) {
             node.setAvailableDiskSpace(availableDiskSpace);
-            node.setFileCount(hostedFilesCount);
+            LOGGER.info("Node " + nodeId + " has " + hostedFilesCount + " hosted files");
             node.setLastHeartbeat(System.currentTimeMillis());
         }
     }
