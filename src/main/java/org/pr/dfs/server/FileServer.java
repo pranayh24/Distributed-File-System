@@ -1,5 +1,6 @@
 package org.pr.dfs.server;
 
+import lombok.Data;
 import org.pr.dfs.model.Node;
 import org.pr.dfs.model.ReplicationStatus;
 import org.pr.dfs.replication.FaultToleranceManager;

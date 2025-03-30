@@ -92,20 +92,19 @@ public class ServerHandler implements Runnable{
 
         try {
             switch (command.getType()) {
-                case LIST_DIR:
+                case LIST_DIRECTORY:
                     handleListDirectory(command.getPath(), oos);
                     break;
 
-                case CREATE_DIR:
+                case CREATE_DIRECTORY:
                     handleCreateDirectory(command.getPath(), oos);
                     break;
 
-                case DELETE_DIR:
+                case DELETE_DIRECTORY:
                     handleDeleteDirectory(command.getPath(), oos);
                     break;
 
-                case MOVE:
-                case RENAME:
+                case MOVE_RENAME:
                     handleMoveOrRename(command, oos);
                     break;
 
@@ -117,9 +116,9 @@ public class ServerHandler implements Runnable{
                     handleFileDownload(command.getPath(), oos);
                     break;
 
-                case DELETE_FILE:
+                /*case DELETE_FILE:
                     handleFileDelete(command.getPath(), oos);
-                    break;
+                    break;*/
 
                 case CREATE_VERSION:
                     handleCreateVersion(command, oos);

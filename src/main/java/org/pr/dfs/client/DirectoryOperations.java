@@ -22,7 +22,7 @@ public class DirectoryOperations {
     @SuppressWarnings("unchecked")
     public List<FileMetaData> listDirectory(String path) throws IOException, ClassNotFoundException {
         path = path.replaceAll("\"", "");
-        Command command = new Command(Command.Type.LIST_DIR, path);
+        Command command = new Command(Command.Type.LIST_DIRECTORY, path);
 
         FileOperationResult result = communicator.sendCommand(command);
         if (result.getData() instanceof List) {
@@ -36,7 +36,7 @@ public class DirectoryOperations {
 
     public boolean createDirectory(String path) throws IOException, ClassNotFoundException {
         path = path.replaceAll("\"", "");
-        Command command = new Command(Command.Type.CREATE_DIR, path);
+        Command command = new Command(Command.Type.CREATE_DIRECTORY, path);
 
         FileOperationResult result = communicator.sendCommand(command);
         if (result.getData() instanceof Boolean) {
@@ -50,7 +50,7 @@ public class DirectoryOperations {
 
     public boolean deleteDirectory(String path) throws IOException, ClassNotFoundException {
         path = path.replaceAll("\"", "");
-        Command command = new Command(Command.Type.DELETE_DIR, path);
+        Command command = new Command(Command.Type.DELETE_DIRECTORY, path);
 
         FileOperationResult result = communicator.sendCommand(command);
         if (result.getData() instanceof Boolean) {
@@ -65,7 +65,7 @@ public class DirectoryOperations {
     public boolean moveOrRename(String sourcePath, String destinationPath) throws IOException, ClassNotFoundException {
         sourcePath = sourcePath.replaceAll("\"", "");
         destinationPath = destinationPath.replaceAll("\"", "");
-        Command command = new Command(Command.Type.MOVE, sourcePath, destinationPath);
+        Command command = new Command(Command.Type.MOVE_RENAME, sourcePath, destinationPath);
 
         FileOperationResult result = communicator.sendCommand(command);
         if (result.getData() instanceof Boolean) {

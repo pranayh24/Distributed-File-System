@@ -1,7 +1,5 @@
 package org.pr.dfs.model;
 
-import lombok.Data;
-
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -11,98 +9,201 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.UUID;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
-@Data
 public class Node implements Serializable {
-    private static final Logger LOGGER = Logger.getLogger(Node.class.getName());
     private static final long serialVersionUID = 1L;
+    private static final Logger LOGGER = Logger.getLogger(Node.class.getName());
 
-    private final String nodeId;
-    private final String address;
-    private final int port;
-    private boolean healthy;
-    private long lastHeartbeat;
+    private String nodeId;
+    private String address;
+    private int port;
+    private boolean isHealthy;
     private long availableDiskSpace;
+    private long lastHeartbeat;
     private Set<String> hostedFiles;
-    private long startTime;
+    private String storagePath;
+    private  long startTime;
 
     public Node(String address, int port) {
-        this.nodeId = UUID.randomUUID().toString();
         this.address = address;
         this.port = port;
-        this.healthy = true;
-        this.lastHeartbeat = System.currentTimeMillis();
-        this.availableDiskSpace = getDiskSpace();
+        this.isHealthy = true;
         this.hostedFiles = new HashSet<>();
-        this.startTime = System.currentTimeMillis();
+        this.lastHeartbeat = System.currentTimeMillis();
+    }
+
+    public String getNodeId() {
+        return nodeId;
+    }
+
+    public void setNodeId(String nodeId) {
+        this.nodeId = nodeId;
+    }
+
+    public String getAddress() {
+        return address;
+    }
+
+    public void setAddress(String address) {
+        this.address = address;
+    }
+
+    public int getPort() {
+        return port;
+    }
+
+    public void setPort(int port) {
+        this.port = port;
     }
 
     public boolean isHealthy() {
-        return healthy && System.currentTimeMillis() - lastHeartbeat <= 60000; // 60 second timeout
+        return isHealthy;
+    }
+
+    public void setHealthy(boolean healthy) {
+        isHealthy = healthy;
+    }
+
+    public long getAvailableDiskSpace() {
+        return availableDiskSpace;
+    }
+
+    public void setAvailableDiskSpace(long availableDiskSpace) {
+        this.availableDiskSpace = availableDiskSpace;
+    }
+
+    public long getLastHeartbeat() {
+        return lastHeartbeat;
     }
 
     public void updateHeartbeat() {
         this.lastHeartbeat = System.currentTimeMillis();
     }
 
-    public boolean transferFile(String filePath, byte[] data) throws Exception {
-        Path localFilePath = Paths.get(filePath);
-        try {
-            // Ensure the directory exists
-            Files.createDirectories(localFilePath.getParent());
+    public Set<String> getHostedFiles() {
+        return hostedFiles;
+    }
 
-            // Write data to the file
-            try (FileOutputStream fos = new FileOutputStream(localFilePath.toFile())) {
-                fos.write(data);
+    public void setHostedFiles(Set<String> hostedFiles) {
+        this.hostedFiles = hostedFiles;
+    }
+
+    public void addHostedFile(String filePath) {
+        if (this.hostedFiles == null) {
+            this.hostedFiles = new HashSet<>();
+        }
+        this.hostedFiles.add(filePath);
+    }
+
+    public void removeHostedFile(String filePath) {
+        if (this.hostedFiles != null) {
+            this.hostedFiles.remove(filePath);
+        }
+    }
+
+    public String getStoragePath() {
+        return storagePath;
+    }
+
+    public void setStoragePath(String storagePath) {
+        this.storagePath = storagePath;
+    }
+
+    // Added methods for file operations
+
+    public boolean transferFile(String filePath, byte[] fileData) {
+        try {
+            // Ensure storage directory exists
+            Path fullPath = getFullStoragePath(filePath);
+            Files.createDirectories(fullPath.getParent());
+
+            // Write the file data
+            try (FileOutputStream fos = new FileOutputStream(fullPath.toFile())) {
+                fos.write(fileData);
+                fos.flush();
             }
 
-            // Add file to hosted files
-            hostedFiles.add(filePath);
-
-            LOGGER.info("File transferred successfully to " + filePath + " on node " + nodeId);
+            // Add to hosted files
+            addHostedFile(filePath);
+            LOGGER.info("File " + filePath + " transferred to node " + nodeId);
             return true;
-        } catch (Exception e) {
-            LOGGER.severe("Error transferring file: " + filePath + " to node: " + nodeId + ": " + e.getMessage());
-            return false;
-        }
-    }
-
-    public byte[] getFile(String filePath) throws Exception {
-        Path localFilePath = Paths.get(filePath);
-        try {
-            return Files.readAllBytes(localFilePath);
-        } catch (Exception e) {
-            LOGGER.severe("Error reading file: " + filePath + " from node: " + nodeId + ": " + e.getMessage());
-            throw new Exception("Failed to retrieve file from node storage", e);
-        }
-    }
-
-    public boolean deleteFile(String filePath) throws Exception {
-        Path localFilePath = Paths.get(filePath);
-        try {
-            Files.deleteIfExists(localFilePath);
-
-            // Remove file from hosted files
-            hostedFiles.remove(filePath);
-
-            LOGGER.info("File deleted successfully from " + filePath + " on node " + nodeId);
-            return true;
-        } catch (Exception e) {
-            LOGGER.severe("Error deleting file: " + filePath + " from node: " + nodeId + ": " + e.getMessage());
-            return false;
-        }
-    }
-
-    private long getDiskSpace() {
-        try {
-            Path path = Paths.get(".");
-            return Files.getFileStore(path).getUsableSpace();
         } catch (IOException e) {
-            LOGGER.warning("Failed to get disk space: " + e.getMessage());
-            return 0;
+            LOGGER.log(Level.SEVERE, "Failed to transfer file " + filePath + " to node " + nodeId, e);
+            return false;
         }
     }
 
+    public boolean deleteFile(String filePath) {
+        try {
+            Path fullPath = getFullStoragePath(filePath);
+            boolean deleted = Files.deleteIfExists(fullPath);
+
+            if (deleted) {
+                removeHostedFile(filePath);
+                LOGGER.info("File " + filePath + " deleted from node " + nodeId);
+            } else {
+                LOGGER.warning("File " + filePath + " not found on node " + nodeId);
+            }
+
+            return deleted;
+        } catch (IOException e) {
+            LOGGER.log(Level.SEVERE, "Failed to delete file " + filePath + " from node " + nodeId, e);
+            return false;
+        }
+    }
+
+    public boolean hasFile(String filePath) {
+        if (hostedFiles != null && hostedFiles.contains(filePath)) {
+            // Verify file actually exists on disk
+            Path fullPath = getFullStoragePath(filePath);
+            return Files.exists(fullPath);
+        }
+        return false;
+    }
+
+    private Path getFullStoragePath(String filePath) {
+        // Normalize the file path to use the storage directory
+        String relativePath = filePath.startsWith("/") ? filePath.substring(1) : filePath;
+        return Paths.get(storagePath, relativePath);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        Node node = (Node) o;
+        return nodeId != null ? nodeId.equals(node.nodeId) : node.nodeId == null;
+    }
+
+    @Override
+    public int hashCode() {
+        return nodeId != null ? nodeId.hashCode() : 0;
+    }
+
+    @Override
+    public String toString() {
+        return "Node{" +
+                "nodeId='" + nodeId + '\'' +
+                ", address='" + address + '\'' +
+                ", port=" + port +
+                ", healthy=" + isHealthy +
+                ", files=" + (hostedFiles != null ? hostedFiles.size() : 0) +
+                '}';
+    }
+
+    public void setLastHeartbeat(long lastHeartbeat) {
+        this.lastHeartbeat = lastHeartbeat;
+    }
+
+    public long getStartTime() {
+        return startTime;
+    }
+
+    public void setStartTime(long startTime) {
+        this.startTime = startTime;
+        setLastHeartbeat(System.currentTimeMillis());
+    }
 }

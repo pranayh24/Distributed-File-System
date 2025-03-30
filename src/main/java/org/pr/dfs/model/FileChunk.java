@@ -14,6 +14,8 @@ public class FileChunk implements Serializable {
     private final String checksum;
     private final long totalChunks;
     private final String fileName;
+    private int replicationFactor;
+    private String clientId;
 
     public FileChunk(String fileId, String fileName, int chunkNumber, byte[] data, String checksum, long totalChunks) {
         this.fileId = fileId;
