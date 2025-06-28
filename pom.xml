@@ -9,8 +9,8 @@
     <version>1.0-SNAPSHOT</version>
 
     <properties>
-        <maven.compiler.source>24</maven.compiler.source>
-        <maven.compiler.target>24</maven.compiler.target>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
     </properties>
     <parent>
         <groupId>org.springframework.boot</groupId>
@@ -24,11 +24,6 @@
             <artifactId>lombok</artifactId>
             <version>1.18.30</version>
             <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.jline</groupId>
-            <artifactId>jline</artifactId>
-            <version>3.21.0</version>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
@@ -65,8 +60,8 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
-                    <source>14</source>
-                    <target>14</target>
+                    <source>17</source>
+                    <target>17</target>
                 </configuration>
             </plugin>
         </plugins>
