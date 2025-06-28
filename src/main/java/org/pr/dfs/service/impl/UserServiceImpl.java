@@ -49,10 +49,10 @@ public class UserServiceImpl implements UserService {
         user.setQuotaLimit(10L * 1024 * 1024); // 1 GB as for now
         user.setCurrentUsage(0L);
 
-        createUserDirectory(userDirectory);
-
         userStore.put(userId, user);
         usernameIndex.put(username, user);
+
+        createUserDirectory(userId);
 
         log.info("Created new User: {} with directory: {}", username, userDirectory);
 

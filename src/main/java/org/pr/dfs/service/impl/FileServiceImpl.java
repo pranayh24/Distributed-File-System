@@ -9,6 +9,7 @@ import org.pr.dfs.model.*;
 import org.pr.dfs.replication.NodeManager;
 import org.pr.dfs.replication.ReplicationManager;
 import org.pr.dfs.service.FileService;
+import org.pr.dfs.service.UserService;
 import org.pr.dfs.utils.FileUtils;
 import org.pr.dfs.versioning.VersionManager;
 import org.springframework.core.io.FileSystemResource;
@@ -35,6 +36,7 @@ public class FileServiceImpl implements FileService {
     private final NodeManager nodeManager;
     private final ReplicationManager replicationManager;
     private final VersionManager versionManager;
+    private final UserService userService;
 
     private static final int CHUNK_SIZE = 1024 * 1024; // 1MB chunks
 
@@ -68,6 +70,8 @@ public class FileServiceImpl implements FileService {
         log.info("Uploading file {} to {}", fileName, destinationPath);
 
         processFileUpload(file, destinationPath, request.getReplicationFactor());
+
+        userService.updateUserStorageUsage(currentUser.getUserId(), file.getSize());
 
         if (request.isCreateVersion()) {
             try {
@@ -161,7 +165,6 @@ public class FileServiceImpl implements FileService {
     }
 
     private void processFileUpload(MultipartFile file, Path destinationPath, int replicationFactor) throws IOException {
-        // Create file chunks and process
         try (InputStream inputStream = file.getInputStream();
              FileOutputStream fos = new FileOutputStream(destinationPath.toFile())) {
 
@@ -175,7 +178,6 @@ public class FileServiceImpl implements FileService {
                 byte[] chunkData = new byte[bytesRead];
                 System.arraycopy(buffer, 0, chunkData, 0, bytesRead);
 
-                // Create file chunk for validation
                 FileChunk chunk = new FileChunk(
                         destinationPath.toString(),
                         file.getOriginalFilename(),
@@ -185,12 +187,10 @@ public class FileServiceImpl implements FileService {
                         totalChunks
                 );
 
-                // Validate chunk
                 if (!validateChunk(chunk)) {
                     throw new IOException("Chunk validation failed for chunk " + chunkNumber);
                 }
 
-                // Write chunk to file
                 fos.write(chunkData);
                 fos.flush();
 
@@ -218,7 +218,6 @@ public class FileServiceImpl implements FileService {
                 new Date(file.lastModified()).toInstant(),
                 ZoneId.systemDefault()));
 
-        // Calculate checksum for files
         if (!file.isDirectory()) {
             try {
                 byte[] fileBytes = Files.readAllBytes(file.toPath());
