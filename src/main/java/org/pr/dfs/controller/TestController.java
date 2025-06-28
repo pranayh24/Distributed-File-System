@@ -77,23 +77,33 @@ public class TestController {
     }
 
     @GetMapping("/current-user")
-    public ResponseEntity<ApiResponse<User>> getCurrentUser() {
-        User currentUser = UserContext.getCurrentUser();
-        if (currentUser != null) {
-            return ResponseEntity.ok(ApiResponse.success(currentUser));
+    public ResponseEntity<ApiResponse<User>> getCurrentUser(
+            @CookieValue(value = "SESSION-ID", required = false) String sessionId) {
+
+        if (sessionId == null) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("No session found"));
+        }
+
+        User user = sessionManager.getUserBySession(sessionId);
+        if (user != null) {
+            UserContext.setCurrentUser(user);
+            log.info("Current user retrieved: {}", user.getUsername());
+            return ResponseEntity.ok(ApiResponse.success(user));
         } else {
             return ResponseEntity.status(401)
-                    .body(ApiResponse.error("No user logged in"));
+                    .body(ApiResponse.error("Invalid or expired session"));
         }
     }
 
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<Void>> logout(
-            @RequestHeader(value = "X-Session-ID", required = false) String sessionId,
+            @CookieValue(value = "SESSION-ID", required = false) String sessionId,
             HttpServletResponse response) {
 
         if (sessionId != null) {
             sessionManager.invalidateSession(sessionId);
+            log.info("Session invalidated: {}", sessionId);
         }
 
         Cookie sessionCookie = new Cookie("SESSION-ID", "");
