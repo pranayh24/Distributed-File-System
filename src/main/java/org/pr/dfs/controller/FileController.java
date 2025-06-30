@@ -9,6 +9,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.pr.dfs.dto.ApiResponse;
 import org.pr.dfs.dto.FileMetaDataDto;
 import org.pr.dfs.dto.FileUploadRequest;
+import org.pr.dfs.dto.MoveRequest;
+import org.pr.dfs.model.User;
+import org.pr.dfs.model.UserContext;
 import org.pr.dfs.service.FileService;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -30,97 +33,106 @@ public class FileController {
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Upload a file", description = "Upload a file to the distributed file system")
     public ResponseEntity<ApiResponse<FileMetaDataDto>> uploadFile(
-            @Parameter(description = "File to upload") @RequestParam("file") MultipartFile file,
-            @Parameter(description = "Target directory") @RequestParam(value="targetDirectory", defaultValue="/") String targetDirectory,
-            @Parameter(description = "Replication Factor") @RequestParam(value ="replicationFactor", defaultValue = "3") int replicationFactor,
-            @Parameter(description = "Version comment") @RequestParam(value="comment", required=false) String comment,
-            @Parameter(description = "createVersion") @RequestParam(value="createVersion", defaultValue = "false") boolean createVersion) {
+            @Parameter(description = "File and related information") @ModelAttribute FileUploadRequest request) {
 
         try {
-            log.info("Uploading file: {} to directory: {}", file.getOriginalFilename(), targetDirectory);
+            User currentUser = validateUser();
+            log.info("User {} uploading file: {}", currentUser.getUsername(),
+                    request.getFile().getOriginalFilename());
 
-            FileUploadRequest request = new FileUploadRequest();
-            request.setFile(file);
-            request.setTargetDirectory(targetDirectory);
-            request.setReplicationFactor(replicationFactor);
-            request.setComment(comment);
-            request.setCreateVersion(createVersion);
-
-            FileMetaDataDto result = fileService.uploadFile(request);
-
-            log.info("File uploaded successfully: {}", result.getName());
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(ApiResponse.success("File uploaded successfully", result));
-        } catch(Exception e) {
-            log.error("Error uploading file: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error(e.getMessage()));
-        }
-    }
-
-    @GetMapping("/download/**")
-    @Operation(summary = "Download a file", description = "Download a file from the distributed file system")
-    public ResponseEntity<Resource> downloadFile(
-            HttpServletRequest request,
-            @Parameter(description = "File path") @PathVariable String filePath) {
-
-        try {
-            String fullPath = request.getRequestURI().substring("/api/files/download/".length());
-
-            log.info("Downloading file: {}", fullPath);
-
-            Resource resource = fileService.downloadFile(fullPath);
-
-            String contentType = "application/octet-stream";
-            try {
-                contentType = request.getServletContext().getMimeType(resource.getFile().getAbsolutePath());
-            } catch (Exception e) {
-                log.debug("Could not determine file type for: {}", fullPath);
+            // Check user quota before upload
+            if (currentUser.getCurrentUsage() + request.getFile().getSize() > currentUser.getQuotaLimit()) {
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.error("Upload would exceed your storage quota"));
             }
 
-            return ResponseEntity.ok()
-                    .contentType(MediaType.parseMediaType(contentType))
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + resource.getFilename() + "\"")
-                    .body(resource);
-        } catch(Exception e) {
-            log.error("Error downloading file: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
-        }
-    }
-
-    @GetMapping("/info/**")
-    @Operation(summary = "Get file metadata", description = "Get metadata information about a file")
-    public ResponseEntity<ApiResponse<FileMetaDataDto>> getFileInfo(HttpServletRequest request) {
-        try {
-            String filePath = request.getRequestURI().substring("/api/files/info/".length());
-
-            log.info("Getting file info for: {}", filePath);
-
-            FileMetaDataDto metaData = fileService.getFileMetaData(filePath);
-
-            return ResponseEntity.ok(ApiResponse.success(metaData));
+            FileMetaDataDto metadata = fileService.uploadFile(request);
+            return ResponseEntity.ok(ApiResponse.success("File uploaded successfully", metadata));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Authentication required"));
         } catch (Exception e) {
-            log.error("Error getting file info: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ApiResponse.error("File not found " + e.getMessage()));
+            log.error("Error uploading file", e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Failed to upload file: " + e.getMessage()));
         }
     }
 
-    @DeleteMapping("/**")
-    @Operation(summary = "Delete a file", description = "Delete a file from the distribution file system")
-    public ResponseEntity<ApiResponse<Void>> deleteFile(HttpServletRequest request) {
+    @GetMapping("/download/{path}")
+    @Operation(summary = "Download a file", description = "Download a file from the distributed file system")
+    public ResponseEntity<Resource> downloadFile(
+            @Parameter(description = "File path") @PathVariable String path) {
+
         try {
-            String filePath = request.getRequestURI().substring("/api/files/".length());
+            User currentUser = validateUser();
+            log.info("User {} downloading file: {}", currentUser.getUsername(), path);
 
-            log.info("Deleting file: {}", filePath);
+            Resource resource = fileService.downloadFile(path);
 
-            fileService.deleteFile(filePath);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            "attachment; filename=\"" + resource.getFilename() + "\"")
+                    .body(resource);
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401).build();
+        } catch (Exception e) {
+            log.error("Error downloading file: {}", path, e);
+            return ResponseEntity.badRequest().build();
+        }
+    }
 
-            return ResponseEntity.ok(ApiResponse.success("File deleted successfully", null));
-        } catch(Exception e) {
-            log.error("Error deleting file: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+    @GetMapping("/info/{path}")
+    @Operation(summary = "Get file metadata", description = "Get metadata information about a file")
+    public ResponseEntity<ApiResponse<FileMetaDataDto>> getFileInfo(@PathVariable String path) {
+        try {
+            User currentUser = validateUser();
+            log.info("User {} getting file info: {}", currentUser.getUsername(), path);
+
+            FileMetaDataDto metadata = fileService.getFileMetaData(path);
+            return ResponseEntity.ok(ApiResponse.success("File info retrieved", metadata));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Authentication required"));
+        } catch (Exception e) {
+            log.error("Error getting file info: {}", path, e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Failed to get file info: " + e.getMessage()));
+        }
+    }
+
+
+    @DeleteMapping("/{path}")
+    @Operation(summary = "Delete a file", description = "Delete a file from the distribution file system")
+    public ResponseEntity<ApiResponse<String>> deleteFile(@PathVariable String path) {
+        try {
+            User currentUser = validateUser();
+            log.info("User {} deleting file: {}", currentUser.getUsername(), path);
+
+            boolean deleted = fileService.deleteFile(path);
+            if (deleted) {
+                return ResponseEntity.ok(ApiResponse.success("File deleted successfully"));
+            } else {
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.error("File not found or could not be deleted"));
+            }
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Authentication required"));
+        } catch (Exception e) {
+            log.error("Error deleting file: {}", path, e);
+            return ResponseEntity.badRequest()
                     .body(ApiResponse.error("Failed to delete file: " + e.getMessage()));
         }
     }
+
+
+    private User validateUser() {
+        User currentUser = UserContext.getCurrentUser();
+        if (currentUser == null) {
+            throw new IllegalStateException("No authenticated user found");
+        }
+        return currentUser;
+    }
+
 }
