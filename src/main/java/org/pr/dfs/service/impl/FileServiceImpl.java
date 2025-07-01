@@ -12,8 +12,8 @@ import org.pr.dfs.service.FileService;
 import org.pr.dfs.service.UserService;
 import org.pr.dfs.utils.FileUtils;
 import org.pr.dfs.versioning.VersionManager;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -23,7 +23,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.Arrays;
 import java.util.Date;
 import java.util.concurrent.CompletableFuture;
 
@@ -42,10 +41,7 @@ public class FileServiceImpl implements FileService {
 
     @Override
     public FileMetaDataDto uploadFile(FileUploadRequest request) throws Exception {
-        User currentUser = UserContext.getCurrentUser();
-        if(currentUser == null) {
-            throw new IllegalArgumentException("User not authenticated");
-        }
+        User currentUser = validateUserContext();
 
         MultipartFile file = request.getFile();
         String targetDirectory = normalizeDirectory(request.getTargetDirectory());
@@ -55,19 +51,22 @@ public class FileServiceImpl implements FileService {
         }
 
         if (currentUser.getCurrentUsage() + file.getSize() > currentUser.getQuotaLimit()) {
-            throw new IllegalArgumentException("Upload would exceed user quota");
+            throw new IllegalArgumentException("Upload would exceed user quota. Current: " +
+                    formatBytes(currentUser.getCurrentUsage()) + ", Limit: " +
+                    formatBytes(currentUser.getQuotaLimit()) + ", File size: " + formatBytes(file.getSize()));
         }
 
         String userDirectory = currentUser.getUserDirectory();
         String fileName = file.getOriginalFilename();
-        String fullPath = Paths.get(userDirectory,targetDirectory, fileName).toString().replace("\\", "/");
+        String userScopedPath = getUserScopedPath(currentUser, targetDirectory, fileName);
 
         Path targetDirPath = Paths.get(dfsConfig.getStorage().getPath(), userDirectory, targetDirectory);
         Files.createDirectories(targetDirPath);
 
-        Path destinationPath = Paths.get(dfsConfig.getStorage().getPath(), fullPath);
+        Path destinationPath = Paths.get(dfsConfig.getStorage().getPath(), userScopedPath);
 
-        log.info("Uploading file {} to {}", fileName, destinationPath);
+        log.info("User {} uploading file {} to {} (size: {})",
+                currentUser.getUsername(), fileName, destinationPath, formatBytes(file.getSize()));
 
         processFileUpload(file, destinationPath, request.getReplicationFactor());
 
@@ -75,93 +74,109 @@ public class FileServiceImpl implements FileService {
 
         if (request.isCreateVersion()) {
             try {
-                versionManager.createVersion(fullPath, "system",
+                versionManager.createVersion(userScopedPath, currentUser.getUsername(),
                         request.getComment() != null ? request.getComment() : "File uploaded via API");
-                log.info("Version created for file: {}", fullPath);
+                log.info("Version created for file: {}", userScopedPath);
             } catch (Exception e) {
-                log.warn("Failed to create version for file {}: {}", fullPath, e.getMessage());
+                log.warn("Failed to create version for file {}: {}", userScopedPath, e.getMessage());
             }
         }
 
         CompletableFuture.runAsync(() -> {
             try {
-                replicationManager.replicateFile(fullPath, request.getReplicationFactor());
-                log.info("Replication initiated for file: {}", fullPath);
+                replicationManager.replicateFile(userScopedPath, request.getReplicationFactor());
+                log.info("Replication initiated for file: {}", userScopedPath);
             } catch (Exception e) {
-                log.error("Failed to initiate replication for file {}: {}", fullPath, e.getMessage());
+                log.error("Failed to initiate replication for file {}: {}", userScopedPath, e.getMessage());
             }
         });
-
-        return createFileMetadata(destinationPath.toFile(), fullPath, request.getReplicationFactor());
+        
+        return createFileMetadata(destinationPath.toFile(), userScopedPath, request.getReplicationFactor());
     }
 
     @Override
     public Resource downloadFile(String filePath) throws Exception {
-        User currentUser = UserContext.getCurrentUser();
-        if(currentUser == null) {
-            throw new IllegalArgumentException("User not authenticated");
-        }
+        User currentUser = validateUserContext();
 
-        String userDirectory = currentUser.getUserDirectory();
         String normalizedPath = normalizePath(filePath);
-        String fullPath = Paths.get(userDirectory, normalizedPath).toString().replace("\\", "/");
+        String userScopedPath = getUserScopedPath(currentUser, normalizedPath);
 
-        Path targetPath = Paths.get(dfsConfig.getStorage().getPath(), userDirectory, fullPath);
+        log.info("User {} downloading file: {} (resolved to: {})",
+                currentUser.getUsername(), normalizedPath, userScopedPath);
 
-        log.info("User {} Downloading file: {}", currentUser.getUsername() ,fullPath);
+        Path fullPath = Paths.get(dfsConfig.getStorage().getPath(), userScopedPath);
 
-        if (!Files.exists(targetPath)) {
-            throw new FileNotFoundException("File not found: " + filePath);
+        if (!Files.exists(fullPath)) {
+            throw new FileNotFoundException("File not found: " + normalizedPath);
         }
 
-        Path userDirPath = Paths.get(dfsConfig.getStorage().getPath(), userDirectory);
-        if (!targetPath.normalize().startsWith(userDirPath.normalize())) {
-            throw new SecurityException("Access denied: Cannot access files outside user directory");
+        if (!isWithinUserDirectory(currentUser, fullPath)) {
+            throw new SecurityException("Access denied: File is outside user's directory");
         }
 
-        return new FileSystemResource(fullPath);
+        return new UrlResource(fullPath.toUri());
     }
 
     @Override
     public FileMetaDataDto getFileMetaData(String filePath) throws Exception {
+        User currentUser = validateUserContext();
+
         String normalizedPath = normalizePath(filePath);
-        Path fullPath = Paths.get(dfsConfig.getStorage().getPath(), normalizedPath);
+        String userScopedPath = getUserScopedPath(currentUser, normalizedPath);
+
+        log.info("User {} getting file info: {} (resolved to: {})",
+                currentUser.getUsername(), normalizedPath, userScopedPath);
+
+        Path fullPath = Paths.get(dfsConfig.getStorage().getPath(), userScopedPath);
 
         if (!Files.exists(fullPath)) {
-            throw new FileNotFoundException("File not found: " + filePath);
+            throw new FileNotFoundException("File not found: " + normalizedPath);
+        }
+
+        if (!isWithinUserDirectory(currentUser, fullPath)) {
+            throw new SecurityException("Access denied: File is outside user's directory");
         }
 
         File file = fullPath.toFile();
-        return createFileMetadata(file, normalizedPath, getReplicationFactor(normalizedPath));
+        return createFileMetadata(file, userScopedPath, 3); // Default replication factor
     }
 
     @Override
-    public void deleteFile(String filePath) throws Exception {
-        String normalizedPath = normalizePath(filePath);
-        Path fullPath = Paths.get(dfsConfig.getStorage().getPath(), normalizedPath);
+    public boolean deleteFile(String filePath) throws Exception {
+        User currentUser = validateUserContext();
 
-        log.info("Deleting file: {}", fullPath);
+        String normalizedPath = normalizePath(filePath);
+        String userScopedPath = getUserScopedPath(currentUser, normalizedPath);
+
+        log.info("User {} deleting file: {} (resolved to: {})",
+                currentUser.getUsername(), normalizedPath, userScopedPath);
+
+        Path fullPath = Paths.get(dfsConfig.getStorage().getPath(), userScopedPath);
 
         if (!Files.exists(fullPath)) {
-            throw new FileNotFoundException("File not found: " + filePath);
+            return false;
         }
 
-        if (Files.isDirectory(fullPath)) {
-            throw new IllegalArgumentException("Cannot delete a directory using file delete operation: " + filePath);
+        if (!isWithinUserDirectory(currentUser, fullPath)) {
+            throw new SecurityException("Access denied: File is outside user's directory");
         }
 
-        // Delete from local storage
-        Files.delete(fullPath);
+        boolean deleted = Files.deleteIfExists(fullPath);
 
-        // Handle replication cleanup
-        CompletableFuture.runAsync(() -> {
+        if (deleted) {
+            // Update user storage usage
+            long fileSize = Files.size(fullPath);
+            userService.updateUserStorageUsage(currentUser.getUserId(), -fileSize);
+
+            // Handle replication cleanup
             try {
-                replicationManager.handleFileDeletion(normalizedPath);
-                log.info("Replication cleanup completed for file: {}", normalizedPath);
+                replicationManager.handleFileDeletion(userScopedPath);
             } catch (Exception e) {
-                log.error("Failed to cleanup replication for file {}: {}", normalizedPath, e.getMessage());
+                log.warn("Failed to clean up replication for deleted file {}: {}", userScopedPath, e.getMessage());
             }
-        });
+        }
+
+        return deleted;
     }
 
     private void processFileUpload(MultipartFile file, Path destinationPath, int replicationFactor) throws IOException {
@@ -265,5 +280,47 @@ public class FileServiceImpl implements FileService {
             return "";
         }
         return directory.replaceAll("^/+", "").replaceAll("/+$", "").replace("\\", "/");
+    }
+
+    private User validateUserContext() {
+        User currentUser = UserContext.getCurrentUser();
+        if (currentUser == null) {
+            throw new IllegalStateException("No authenticated user found in context");
+        }
+        return currentUser;
+    }
+
+    private String getUserScopedPath(User user, String directory, String fileName) {
+        String userDirectory = user.getUserDirectory();
+        if (directory == null || directory.trim().isEmpty() || directory.equals("/")) {
+            return Paths.get(userDirectory, fileName).toString().replace("\\", "/");
+        }
+        return Paths.get(userDirectory, directory, fileName).toString().replace("\\", "/");
+    }
+
+    private String getUserScopedPath(User user, String filePath) {
+        String userDirectory = user.getUserDirectory();
+        if (filePath == null || filePath.trim().isEmpty() || filePath.equals("/")) {
+            return userDirectory;
+        }
+        return Paths.get(userDirectory, filePath).toString().replace("\\", "/");
+    }
+
+    private boolean isWithinUserDirectory(User user, Path filePath) {
+        try {
+            Path userDirPath = Paths.get(dfsConfig.getStorage().getPath(), user.getUserDirectory()).toRealPath();
+            Path fileRealPath = filePath.toRealPath();
+            return fileRealPath.startsWith(userDirPath);
+        } catch (Exception e) {
+            log.warn("Failed to validate path security for user {}: {}", user.getUsername(), e.getMessage());
+            return false;
+        }
+    }
+
+    private String formatBytes(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
+        if (bytes < 1024 * 1024 * 1024) return String.format("%.1f MB", bytes / (1024.0 * 1024));
+        return String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024));
     }
 }

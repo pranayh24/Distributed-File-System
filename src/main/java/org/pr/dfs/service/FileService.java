@@ -8,5 +8,5 @@ public interface FileService {
     FileMetaDataDto uploadFile(FileUploadRequest request) throws Exception;
     Resource downloadFile(String filePath) throws Exception;
     FileMetaDataDto getFileMetaData(String fileName) throws Exception;
-    void deleteFile(String filePath) throws Exception;
+    boolean deleteFile(String filePath) throws Exception;
 }
