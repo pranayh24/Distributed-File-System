@@ -90,7 +90,7 @@ public class FileServiceImpl implements FileService {
                 log.error("Failed to initiate replication for file {}: {}", userScopedPath, e.getMessage());
             }
         });
-        
+
         return createFileMetadata(destinationPath.toFile(), userScopedPath, request.getReplicationFactor());
     }
 
@@ -164,11 +164,9 @@ public class FileServiceImpl implements FileService {
         boolean deleted = Files.deleteIfExists(fullPath);
 
         if (deleted) {
-            // Update user storage usage
             long fileSize = Files.size(fullPath);
             userService.updateUserStorageUsage(currentUser.getUserId(), -fileSize);
 
-            // Handle replication cleanup
             try {
                 replicationManager.handleFileDeletion(userScopedPath);
             } catch (Exception e) {
