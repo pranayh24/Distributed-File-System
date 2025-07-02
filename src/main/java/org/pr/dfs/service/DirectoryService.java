@@ -9,7 +9,7 @@ import java.util.List;
 public interface DirectoryService {
 
     List<FileMetaDataDto> listDirectory(String path) throws Exception;
-    void createDirectory(String path) throws Exception;
-    void deleteDirectory(String path) throws Exception;
-    void moveOrRename(String sourcePath, String destinationPath) throws Exception;
+    boolean createDirectory(String path) throws Exception;
+    boolean deleteDirectory(String path) throws Exception;
+    boolean moveOrRename(String sourcePath, String destinationPath) throws Exception;
 }
