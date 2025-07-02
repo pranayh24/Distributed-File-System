@@ -10,6 +10,8 @@ import org.pr.dfs.dto.ApiResponse;
 import org.pr.dfs.dto.DirectoryRequest;
 import org.pr.dfs.dto.FileMetaDataDto;
 import org.pr.dfs.dto.MoveRequest;
+import org.pr.dfs.model.User;
+import org.pr.dfs.model.UserContext;
 import org.pr.dfs.service.DirectoryService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,75 +28,123 @@ public class DirectoryController {
 
     private final DirectoryService directoryService;
 
-    @GetMapping("/**")
-    @Operation(summary = "List directory content", description = "Get the contents of a directory")
-    public ResponseEntity<ApiResponse<List<FileMetaDataDto>>> listDirectory(HttpServletRequest request) {
+    @GetMapping("/")
+    public ResponseEntity<ApiResponse<List<FileMetaDataDto>>> listRootDirectory() {
         try {
-            String directoryPath = request.getRequestURI().substring("/api/directories/".length());
-            if(directoryPath.isEmpty()) {
-                directoryPath= "/";
-            }
+            User currentUser = validateUser();
+            log.info("User {} listing root directory", currentUser.getUsername());
 
-            log.info("Listing directory: {}", directoryPath);
-
-            List<FileMetaDataDto> contents = directoryService.listDirectory(directoryPath);
-
-            return ResponseEntity.ok(ApiResponse.success(contents));
+            List<FileMetaDataDto> files = directoryService.listDirectory("/");
+            return ResponseEntity.ok(ApiResponse.success("Directory listed successfully", files));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Authentication required"));
         } catch (Exception e) {
-            log.error("Error listing directory: {}",e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Failed to list directory", e.getMessage()));
+            log.error("Error listing root directory", e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Failed to list directory: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/{path}")
+    @Operation(summary = "List directory content", description = "Get the contents of a directory")
+    public ResponseEntity<ApiResponse<List<FileMetaDataDto>>> listDirectory(@PathVariable String path) {
+        try {
+            User currentUser = validateUser();
+            log.info("User {} listing directory: {}", currentUser.getUsername(), path);
+
+            List<FileMetaDataDto> files = directoryService.listDirectory(path);
+            return ResponseEntity.ok(ApiResponse.success("Directory listed successfully", files));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Authentication required"));
+        } catch (Exception e) {
+            log.error("Error listing directory: {}", path, e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Failed to list directory: " + e.getMessage()));
         }
     }
 
     @PostMapping
     @Operation(summary = "Create directory", description = "Create a new directory")
-    public ResponseEntity<ApiResponse<Void>> createDirectory(@Valid @RequestBody DirectoryRequest request) {
+    public ResponseEntity<ApiResponse<String>> createDirectory(@Valid @RequestBody DirectoryRequest request) {
         try {
-            log.info("Creating directory: {}", request.getPath());
+            User currentUser = validateUser();
+            log.info("User {} creating directory: {}", currentUser.getUsername(), request.getPath());
 
-            directoryService.createDirectory(request.getPath());
-
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(ApiResponse.success("Directory created succesfully", null));
-        } catch(Exception e) {
-            log.error("Error creating directory: {}",e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Failed to create directory", e.getMessage()));
+            boolean created = directoryService.createDirectory(request.getPath());
+            if (created) {
+                return ResponseEntity.ok(ApiResponse.success("Directory created successfully"));
+            } else {
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.error("Failed to create directory"));
+            }
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Authentication required"));
+        } catch (Exception e) {
+            log.error("Error creating directory: {}", request.getPath(), e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Failed to create directory: " + e.getMessage()));
         }
     }
 
-    @DeleteMapping("/**")
+
+    @DeleteMapping("/{path}")
     @Operation(summary = "Delete directory", description = "Delete a directory and its contents")
-    public ResponseEntity<ApiResponse<Void>> deleteDirectory(HttpServletRequest request) {
+    public ResponseEntity<ApiResponse<String>> deleteDirectory(@PathVariable String path) {
         try {
-            String directoryPath = request.getRequestURI().substring("/api/directories/".length());
+            User currentUser = validateUser();
+            log.info("User {} deleting directory: {}", currentUser.getUsername(), path);
 
-            log.info("Deleting directory: {}", directoryPath);
-
-            directoryService.deleteDirectory(directoryPath);
-
-            return ResponseEntity.ok(ApiResponse.success("Directory deleted successfully", null));
+            boolean deleted = directoryService.deleteDirectory(path);
+            if (deleted) {
+                return ResponseEntity.ok(ApiResponse.success("Directory deleted successfully"));
+            } else {
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.error("Directory not found or could not be deleted"));
+            }
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Authentication required"));
         } catch (Exception e) {
-            log.error("Error deleting directory: {}",e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Failed to delete directory", e.getMessage()));
+            log.error("Error deleting directory: {}", path, e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Failed to delete directory: " + e.getMessage()));
         }
     }
 
     @PutMapping("/move")
     @Operation(summary = "Move/rename file or directory", description = "Move or rename a file or directory")
-    public ResponseEntity<ApiResponse<Void>> moveOrRename(@RequestBody MoveRequest request) {
+    public ResponseEntity<ApiResponse<String>> moveOrRename(@RequestBody MoveRequest request) {
         try {
-            log.info("Moving {} to {}", request.getSourcePath(), request.getDestinationPath());
+            User currentUser = validateUser();
+            log.info("User {} moving directory from {} to {}",
+                    currentUser.getUsername(), request.getSourcePath(), request.getDestinationPath());
 
-            directoryService.moveOrRename(request.getSourcePath(), request.getDestinationPath());
-
-            return ResponseEntity.ok(ApiResponse.success("File/directory moved successfully", null));
+            boolean moved = directoryService.moveOrRename(request.getSourcePath(), request.getDestinationPath());
+            if (moved) {
+                return ResponseEntity.ok(ApiResponse.success("Directory moved successfully"));
+            } else {
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.error("Failed to move directory"));
+            }
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Authentication required"));
         } catch (Exception e) {
-            log.error("Error moving file/directory: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Failed to move file/directory", e.getMessage()));
+            log.error("Error moving directory from {} to {}",
+                    request.getSourcePath(), request.getDestinationPath(), e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Failed to move directory: " + e.getMessage()));
         }
+    }
+
+    private User validateUser() {
+        User currentUser = UserContext.getCurrentUser();
+        if (currentUser == null) {
+            throw new IllegalStateException("No authenticated user found");
+        }
+        return currentUser;
     }
 }
