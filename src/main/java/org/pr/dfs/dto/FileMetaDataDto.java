@@ -16,8 +16,10 @@ public class FileMetaDataDto {
     private String path;
     private boolean isDirectory;
     private long size;
+    private LocalDateTime uploadTime;
     private LocalDateTime lastModified;
     private String checksum;
     private int replicationFactor;
     private int currentReplicas;
+    private String contentType;
 }
