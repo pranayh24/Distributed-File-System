@@ -198,7 +198,7 @@ public class ReplicationManager {
                     continue;
                 }
 
-                if(node.deleteFile(filePath)) {
+                if(node.removeFile(filePath)) {
                     LOGGER.info("Successfully deleted file " + filePath + " from node " + nodeId);
                     removeFileFromNodeMapping(filePath, nodeId);
                 } else {

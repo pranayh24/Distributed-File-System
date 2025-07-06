@@ -129,11 +129,27 @@ public class NodeManager {
 
     private boolean isNodeResponsive(Node node) {
         try {
-            Socket socket = new Socket();
-            socket.connect(new java.net.InetSocketAddress(node.getAddress(), node.getPort() > 0 ? node.getPort() : HEALTH_CHECK_PORT), CONNECTION_TIMEOUT_MS);
-            socket.close();
-            return true;
-        } catch(IOException e) {
+            // Make HTTP health check to actual node server
+            String healthUrl = "http://" + node.getAddress() + ":" + node.getPort() + "/node/health";
+
+            // Simple HTTP connection test
+            java.net.URL url = new java.net.URL(healthUrl);
+            java.net.HttpURLConnection connection = (java.net.HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(CONNECTION_TIMEOUT_MS);
+            connection.setReadTimeout(CONNECTION_TIMEOUT_MS);
+
+            int responseCode = connection.getResponseCode();
+            connection.disconnect();
+
+            boolean isHealthy = responseCode == 200;
+            if (isHealthy) {
+                LOGGER.info("Node " + node.getNodeId() + " health check passed");
+            }
+
+            return isHealthy;
+
+        } catch(Exception e) {
             LOGGER.fine("Node " + node.getNodeId() + " health check failed: " + e.getMessage());
             return false;
         }
@@ -157,7 +173,7 @@ public class NodeManager {
         notifyNodeFailure(nodeId);
     }
 
-    public void updateNodeInfor(String nodeId, long availableDiskSpace, int hostedFilesCount) {
+    public void updateNodeInfo(String nodeId, long availableDiskSpace, int hostedFilesCount) {
         Node node = nodes.get(nodeId);
         if(node != null) {
             node.setAvailableDiskSpace(availableDiskSpace);

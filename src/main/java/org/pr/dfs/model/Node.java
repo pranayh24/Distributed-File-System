@@ -111,62 +111,83 @@ public class Node implements Serializable {
         this.storagePath = storagePath;
     }
 
-    // Added methods for file operations
+    public long getStartTime() {
+        return startTime;
+    }
 
+    public void setStartTime(long startTime) {
+        this.startTime = startTime;
+    }
+
+    /**
+     * Transfer file to this node's storage
+     * @param filePath relative file path
+     * @param fileData file content as bytes
+     * @return true if transfer successful
+     */
     public boolean transferFile(String filePath, byte[] fileData) {
         try {
-            // Ensure storage directory exists
-            Path fullPath = getFullStoragePath(filePath);
-            Files.createDirectories(fullPath.getParent());
+            // Create node storage directory structure
+            Path nodeStorageBase = Paths.get("./storage", this.nodeId);
+            Path targetFilePath = nodeStorageBase.resolve(filePath);
 
-            // Write the file data
-            try (FileOutputStream fos = new FileOutputStream(fullPath.toFile())) {
-                fos.write(fileData);
-                fos.flush();
-            }
+            // Ensure parent directories exist
+            Files.createDirectories(targetFilePath.getParent());
 
-            // Add to hosted files
+            // Write file data
+            Files.write(targetFilePath, fileData);
+
+            // Add to hosted files set
             addHostedFile(filePath);
-            LOGGER.info("File " + filePath + " transferred to node " + nodeId);
+
+            LOGGER.info("Successfully transferred file " + filePath + " to node " + this.nodeId);
             return true;
+
         } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "Failed to transfer file " + filePath + " to node " + nodeId, e);
+            LOGGER.log(Level.SEVERE, "Failed to transfer file " + filePath + " to node " + this.nodeId, e);
             return false;
         }
     }
 
-    public boolean deleteFile(String filePath) {
+    /**
+     * Remove file from this node's storage
+     * @param filePath relative file path
+     * @return true if removal successful
+     */
+    public boolean removeFile(String filePath) {
         try {
-            Path fullPath = getFullStoragePath(filePath);
-            boolean deleted = Files.deleteIfExists(fullPath);
+            Path nodeStorageBase = Paths.get("./storage", this.nodeId);
+            Path targetFilePath = nodeStorageBase.resolve(filePath);
+
+            boolean deleted = Files.deleteIfExists(targetFilePath);
 
             if (deleted) {
                 removeHostedFile(filePath);
-                LOGGER.info("File " + filePath + " deleted from node " + nodeId);
-            } else {
-                LOGGER.warning("File " + filePath + " not found on node " + nodeId);
+                LOGGER.info("Successfully removed file " + filePath + " from node " + this.nodeId);
             }
 
             return deleted;
+
         } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "Failed to delete file " + filePath + " from node " + nodeId, e);
+            LOGGER.log(Level.SEVERE, "Failed to remove file " + filePath + " from node " + this.nodeId, e);
             return false;
         }
     }
 
+    /**
+     * Check if file exists on this node
+     * @param filePath relative file path
+     * @return true if file exists
+     */
     public boolean hasFile(String filePath) {
-        if (hostedFiles != null && hostedFiles.contains(filePath)) {
-            // Verify file actually exists on disk
-            Path fullPath = getFullStoragePath(filePath);
-            return Files.exists(fullPath);
+        try {
+            Path nodeStorageBase = Paths.get("./storage", this.nodeId);
+            Path targetFilePath = nodeStorageBase.resolve(filePath);
+            return Files.exists(targetFilePath);
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Error checking file existence on node " + this.nodeId, e);
+            return false;
         }
-        return false;
-    }
-
-    private Path getFullStoragePath(String filePath) {
-        // Normalize the file path to use the storage directory
-        String relativePath = filePath.startsWith("/") ? filePath.substring(1) : filePath;
-        return Paths.get(storagePath, relativePath);
     }
 
     @Override
@@ -196,14 +217,5 @@ public class Node implements Serializable {
 
     public void setLastHeartbeat(long lastHeartbeat) {
         this.lastHeartbeat = lastHeartbeat;
-    }
-
-    public long getStartTime() {
-        return startTime;
-    }
-
-    public void setStartTime(long startTime) {
-        this.startTime = startTime;
-        setLastHeartbeat(System.currentTimeMillis());
     }
 }

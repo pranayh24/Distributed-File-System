@@ -51,7 +51,7 @@ public class FaultToleranceManager implements NodeManager.NodeStatusListener {
         }
     }
 
-    private void handleNodeFailure(String nodeId) {
+    public void handleNodeFailure(String nodeId) {
         NodeStatus status = nodeStatuses.get(nodeId);
 
         if(status == null) {
@@ -61,12 +61,12 @@ public class FaultToleranceManager implements NodeManager.NodeStatusListener {
 
         // Mark node as unhealthy
         status.markUnhealthy();
-        nodeManager.markNodeHealthy(nodeId);
+        nodeManager.markNodeUnhealthy(nodeId);  // Fixed: should mark as unhealthy, not healthy
 
         Long lastRecovery = nodeRecoveryTimes.get(nodeId);
         long now = System.currentTimeMillis();
 
-        if(lastRecovery == null && (now - lastRecovery) < HEARTBEAT_TIMEOUT_MS) {
+        if(lastRecovery != null && (now - lastRecovery) < NODE_RECOVERY_COOLDOWN_MS) {  // Fixed: added null check
             LOGGER.info("Skipping recovery for node: " + nodeId + " - in cooldown period (" + (now - lastRecovery)/1000 + "s elapsed)");
             return;
         }
@@ -202,5 +202,3 @@ public class FaultToleranceManager implements NodeManager.NodeStatusListener {
         }
     }
 }
-
-
