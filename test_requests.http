@@ -1,0 +1,16 @@
+### Test Current User
+GET http://localhost:8080/api/test/current-user
+Cookie: SESSION-ID=52de5369-253c-4b05-ac61-76fa555a3e04
+
+### Test Directory Listing
+GET http://localhost:8080/api/directories/
+Cookie: SESSION-ID=52de5369-253c-4b05-ac61-76fa555a3e04
+
+### Login (if session expired)
+POST http://localhost:8080/api/test/login
+Content-Type: application/json
+
+{
+  "username": "pranayh24",
+  "password": "your_password_here"
+}
