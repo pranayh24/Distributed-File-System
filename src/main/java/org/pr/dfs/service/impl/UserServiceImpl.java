@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.pr.dfs.config.DfsConfig;
 import org.pr.dfs.model.User;
+import org.pr.dfs.repository.UserRepository;
 import org.pr.dfs.service.UserService;
 import org.springframework.stereotype.Service;
 
@@ -14,9 +15,7 @@ import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.Base64;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
@@ -24,13 +23,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public class UserServiceImpl implements UserService {
 
     private final DfsConfig dfsConfig;
-
-    private final Map<String, User> userStore = new ConcurrentHashMap<>();
-    private final Map<String, User> usernameIndex = new ConcurrentHashMap<>();
+    private final UserRepository userRepository;
 
     @Override
     public User createUser(String username, String email, String password) throws Exception {
-        if(usernameIndex.containsKey(username)) {
+        // Check if username already exists
+        User existingUser = userRepository.findByUsername(username);
+        if(existingUser != null) {
             throw new IllegalArgumentException("Username already exists: " + username);
         }
 
@@ -46,11 +45,11 @@ public class UserServiceImpl implements UserService {
         user.setCreatedAt(LocalDateTime.now());
         user.setActive(true);
         user.setUserDirectory(userDirectory);
-        user.setQuotaLimit(10L * 1024 * 1024); // 1 GB as for now
+        user.setQuotaLimit(10L * 1024 * 1024); // 10 MB for now
         user.setCurrentUsage(0L);
 
-        userStore.put(userId, user);
-        usernameIndex.put(username, user);
+        // Save user to database
+        user = userRepository.save(user);
 
         createUserDirectory(userId);
 
@@ -61,16 +60,13 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public User getUserById(String userId) throws Exception {
-        User user = userStore.get(userId);
-        if(user == null) {
-            throw new IllegalArgumentException("User not found: " + userId);
-        }
-        return user;
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
     }
 
     @Override
     public User getUserByUsername(String username) throws Exception {
-        User user = usernameIndex.get(username);
+        User user = userRepository.findByUsername(username);
         if(user == null) {
             throw new IllegalArgumentException("User not found: " + username);
         }
@@ -79,7 +75,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public boolean validateUser(String username, String password) throws Exception {
-        User user = getUserByUsername(username);
+        User user = userRepository.findByUsername(username);
         if(user == null || !user.isActive()) {
             return false;
         }
@@ -109,14 +105,28 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public void updateUserStorageUsage(String userId, long bytes) throws Exception {
+    public void updateUserStorageUsage(String userId, long sizeChange) throws Exception {
         User user = getUserById(userId);
-        user.setCurrentUsage(user.getCurrentUsage() + bytes);
+        long newUsage = user.getCurrentUsage() + sizeChange;
 
-        if (user.getCurrentUsage() > user.getQuotaLimit()) {
-            log.warn("User {} exceeded quota: {} / {}", user.getUsername(),
-                    user.getCurrentUsage(), user.getQuotaLimit());
+        if (newUsage < 0) {
+            newUsage = 0;
         }
+
+        user.setCurrentUsage(newUsage);
+        userRepository.save(user); // Save updated usage to database
+
+        log.debug("Updated storage usage for user {}: {} -> {} (change: {})",
+                user.getUsername(), user.getCurrentUsage() - sizeChange, newUsage, sizeChange);
+    }
+
+    @Override
+    public void updateLastLoginTime(String userId) throws Exception {
+        User user = getUserById(userId);
+        user.setLastLoginAt(LocalDateTime.now());
+        userRepository.save(user); // Save updated login time to database
+
+        log.debug("Updated last login time for user: {}", user.getUsername());
     }
 
     private String hashPassword(String password) throws Exception {

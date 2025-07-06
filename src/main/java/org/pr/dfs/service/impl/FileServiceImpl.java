@@ -9,6 +9,7 @@ import org.pr.dfs.model.*;
 import org.pr.dfs.replication.NodeManager;
 import org.pr.dfs.replication.ReplicationManager;
 import org.pr.dfs.service.FileService;
+import org.pr.dfs.service.SimpleNodeService;
 import org.pr.dfs.service.UserService;
 import org.pr.dfs.utils.FileUtils;
 import org.pr.dfs.versioning.VersionManager;
@@ -23,8 +24,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -36,6 +40,7 @@ public class FileServiceImpl implements FileService {
     private final ReplicationManager replicationManager;
     private final VersionManager versionManager;
     private final UserService userService;
+    private final SimpleNodeService simpleNodeService; // Added simple node service
 
     private static final int CHUNK_SIZE = 1024 * 1024; // 1MB chunks
 
@@ -50,6 +55,10 @@ public class FileServiceImpl implements FileService {
             throw new IllegalArgumentException("File cannot be empty");
         }
 
+        if (file.getSize() <= 0) {
+            throw new IllegalArgumentException("Invalid file size");
+        }
+
         if (currentUser.getCurrentUsage() + file.getSize() > currentUser.getQuotaLimit()) {
             throw new IllegalArgumentException("Upload would exceed user quota. Current: " +
                     formatBytes(currentUser.getCurrentUsage()) + ", Limit: " +
@@ -58,40 +67,117 @@ public class FileServiceImpl implements FileService {
 
         String userDirectory = currentUser.getUserDirectory();
         String fileName = file.getOriginalFilename();
+
+        if (fileName == null || fileName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Invalid file name");
+        }
+
         String userScopedPath = getUserScopedPath(currentUser, targetDirectory, fileName);
 
-        Path targetDirPath = Paths.get(dfsConfig.getStorage().getPath(), userDirectory, targetDirectory);
-        Files.createDirectories(targetDirPath);
+        try {
+            Path userDirPath = Paths.get(dfsConfig.getStorage().getPath(), userDirectory, targetDirectory);
+            Files.createDirectories(userDirPath);
 
-        Path destinationPath = Paths.get(dfsConfig.getStorage().getPath(), userScopedPath);
+            log.info("User {} uploading file {} to distributed system (size: {})",
+                    currentUser.getUsername(), fileName, formatBytes(file.getSize()));
 
-        log.info("User {} uploading file {} to {} (size: {})",
-                currentUser.getUsername(), fileName, destinationPath, formatBytes(file.getSize()));
+            Path userFilePath = Paths.get(dfsConfig.getStorage().getPath(), userScopedPath);
+            if (Files.exists(userFilePath)) {
+                throw new IllegalArgumentException("File already exists: " + fileName);
+            }
 
-        processFileUpload(file, destinationPath, request.getReplicationFactor());
+            FileMetaDataDto result = processDistributedUpload(file, userScopedPath, request.getReplicationFactor());
 
-        userService.updateUserStorageUsage(currentUser.getUserId(), file.getSize());
+            userService.updateUserStorageUsage(currentUser.getUserId(), file.getSize());
 
-        if (request.isCreateVersion()) {
+            if (request.isCreateVersion()) {
+                try {
+                    versionManager.createVersion(userScopedPath, currentUser.getUsername(),
+                            request.getComment() != null ? request.getComment() : "File uploaded via API");
+                    log.info("Version created for file: {}", userScopedPath);
+                } catch (Exception e) {
+                    log.warn("Failed to create version for file {}: {}", userScopedPath, e.getMessage());
+                }
+            }
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("Failed to upload file {} for user {}: {}", fileName, currentUser.getUsername(), e.getMessage());
+            throw new RuntimeException("File upload failed: " + e.getMessage(), e);
+        }
+    }
+
+    private FileMetaDataDto processDistributedUpload(MultipartFile file, String userScopedPath, int replicationFactor) throws Exception {
+        List<Node> availableNodes = nodeManager.getAllNodes().stream()
+                .filter(Node::isHealthy)
+                .collect(Collectors.toList());
+
+        if (availableNodes.isEmpty()) {
+            throw new IllegalStateException("No healthy storage nodes available for replication");
+        }
+
+        int actualReplicationFactor = Math.min(replicationFactor > 0 ? replicationFactor : dfsConfig.getReplication().getFactor(),
+                availableNodes.size());
+
+        log.info("Uploading file {} with replication factor {} across {} nodes",
+                userScopedPath, actualReplicationFactor, availableNodes.size());
+
+        List<Node> targetNodes = selectTargetNodes(availableNodes, actualReplicationFactor);
+
+        boolean uploadSuccess = false;
+        Exception lastException = null;
+        byte[] fileData = file.getBytes();
+
+        // Use SimpleNodeService for distributed upload
+        for (Node node : targetNodes) {
             try {
-                versionManager.createVersion(userScopedPath, currentUser.getUsername(),
-                        request.getComment() != null ? request.getComment() : "File uploaded via API");
-                log.info("Version created for file: {}", userScopedPath);
+                boolean success = simpleNodeService.storeFileOnNode(node, userScopedPath, fileData);
+                if (success) {
+                    node.addHostedFile(userScopedPath);
+                    log.info("File {} replicated to node {} using simple HTTP", userScopedPath, node.getNodeId());
+                    uploadSuccess = true;
+                } else {
+                    log.error("Failed to replicate file {} to node {} using simple HTTP", userScopedPath, node.getNodeId());
+                }
             } catch (Exception e) {
-                log.warn("Failed to create version for file {}: {}", userScopedPath, e.getMessage());
+                log.error("Failed to replicate file {} to node {}: {}", userScopedPath, node.getNodeId(), e.getMessage());
+                lastException = e;
             }
         }
 
-        CompletableFuture.runAsync(() -> {
-            try {
-                replicationManager.replicateFile(userScopedPath, request.getReplicationFactor());
-                log.info("Replication initiated for file: {}", userScopedPath);
-            } catch (Exception e) {
-                log.error("Failed to initiate replication for file {}: {}", userScopedPath, e.getMessage());
-            }
-        });
+        if (!uploadSuccess) {
+            throw new RuntimeException("Failed to upload file to any node", lastException);
+        }
 
-        return createFileMetadata(destinationPath.toFile(), userScopedPath, request.getReplicationFactor());
+        // Store locally for backup/metadata purposes
+        Path userFilePath = Paths.get(dfsConfig.getStorage().getPath(), userScopedPath);
+        Files.createDirectories(userFilePath.getParent());
+        try (InputStream inputStream = file.getInputStream()) {
+            Files.copy(inputStream, userFilePath);
+        }
+
+        replicationManager.replicateFile(userScopedPath, actualReplicationFactor);
+
+        return FileMetaDataDto.builder()
+                .name(file.getOriginalFilename())
+                .path(userScopedPath)
+                .size(file.getSize())
+                .contentType(file.getContentType())
+                .uploadTime(LocalDateTime.now())
+                .replicationFactor(actualReplicationFactor)
+                .build();
+    }
+
+    private List<Node> selectTargetNodes(List<Node> availableNodes, int replicationFactor) {
+        List<Node> selectedNodes = availableNodes.stream()
+                .limit(replicationFactor)
+                .collect(Collectors.toList());
+        return selectedNodes;
+    }
+
+    private Path getNodeStoragePath(Node node, String userScopedPath) {
+        return Paths.get(dfsConfig.getStorage().getPath(), "..", "storage", node.getNodeId(), userScopedPath);
     }
 
     @Override
@@ -104,6 +190,17 @@ public class FileServiceImpl implements FileService {
         log.info("User {} downloading file: {} (resolved to: {})",
                 currentUser.getUsername(), normalizedPath, userScopedPath);
 
+        // Try to get from distributed nodes first
+        byte[] fileData = simpleNodeService.retrieveFile(userScopedPath);
+        if (fileData != null) {
+            log.info("File {} retrieved from distributed nodes", userScopedPath);
+            // Create temporary file for Resource
+            Path tempFile = Files.createTempFile("dfs_download_", ".tmp");
+            Files.write(tempFile, fileData);
+            return new UrlResource(tempFile.toUri());
+        }
+
+        // Fallback to local storage
         Path fullPath = Paths.get(dfsConfig.getStorage().getPath(), userScopedPath);
 
         if (!Files.exists(fullPath)) {
@@ -161,10 +258,10 @@ public class FileServiceImpl implements FileService {
             throw new SecurityException("Access denied: File is outside user's directory");
         }
 
+        long fileSize = Files.size(fullPath);
         boolean deleted = Files.deleteIfExists(fullPath);
 
         if (deleted) {
-            long fileSize = Files.size(fullPath);
             userService.updateUserStorageUsage(currentUser.getUserId(), -fileSize);
 
             try {
@@ -322,3 +419,4 @@ public class FileServiceImpl implements FileService {
         return String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024));
     }
 }
+

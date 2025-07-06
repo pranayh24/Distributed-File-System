@@ -10,4 +10,5 @@ public interface UserService {
     void createUserDirectory(String userId) throws Exception;
     long getUserStorageUsage(String userId) throws Exception;
     void updateUserStorageUsage(String userId, long bytes) throws Exception;
+    void updateLastLoginTime(String userId) throws Exception;
 }
