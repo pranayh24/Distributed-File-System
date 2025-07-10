@@ -27,6 +27,9 @@ public class FileMetadata {
     private String filePath;
 
     @Column(nullable = false)
+    private String fileSize;
+
+    @Column(nullable = false)
     private String userId;
 
     private String contentType;
