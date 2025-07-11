@@ -41,4 +41,16 @@ public interface FileMetadataRepository extends JpaRepository<FileMetadata, Stri
             "AND LOWER(t) LIKE LOWER(CONCAT('%', :tag, '%'))")
     Page<FileMetadata> searchByTag(@Param("userId") String userId, @Param("tag") String tag,
                                    Pageable pageable);
+
+    @Query("SELECT f FROM FileMetadata f WHERE f.userId = :userId AND f.isDeleted = false " +
+            "ORDER BY f.accessCount DESC")
+    Page<FileMetadata> findPopularFiles(@Param("userId") String userId, Pageable pageable);
+
+    @Query("SELECT DISTINCT f.fileName FROM FileMetadata f WHERE f.userId = :userId AND f.isDeleted = false " +
+            "AND LOWER(f.fileName) LIKE LOWER(CONCAT('%', :query, '%')) ORDER BY f.fileName")
+    List<String> findFileNameSuggestions(@Param("userId") String userId, @Param("query") String query);
+
+    @Query("SELECT f.contentType, COUNT(f) FROM FileMetadata f WHERE f.userId = :userId AND f.isDeleted = false " +
+            "GROUP BY f.contentType ORDER BY COUNT(f) DESC")
+    List<Object[]> getContentTypeStatistics(@Param("userId") String userId);
 }
