@@ -4,6 +4,7 @@ import org.pr.dfs.dto.FileMetadata;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -13,7 +14,7 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface FileMetadataRepository extends JpaRepository<FileMetadata, String> {
+public interface FileMetadataRepository extends JpaRepository<FileMetadata, String>, JpaSpecificationExecutor<FileMetadata> {
 
     List<FileMetadata> findByUserIdAndIsDeletedFalse(String userId);
 
@@ -43,6 +44,10 @@ public interface FileMetadataRepository extends JpaRepository<FileMetadata, Stri
                                    Pageable pageable);
 
     @Query("SELECT f FROM FileMetadata f WHERE f.userId = :userId AND f.isDeleted = false " +
+            "ORDER BY f.lastAccessed DESC")
+    Page<FileMetadata> findRecentFiles(@Param("userId") String userId, Pageable pageable);
+
+    @Query("SELECT f FROM FileMetadata f WHERE f.userId = :userId AND f.isDeleted = false " +
             "ORDER BY f.accessCount DESC")
     Page<FileMetadata> findPopularFiles(@Param("userId") String userId, Pageable pageable);
 
@@ -53,4 +58,5 @@ public interface FileMetadataRepository extends JpaRepository<FileMetadata, Stri
     @Query("SELECT f.contentType, COUNT(f) FROM FileMetadata f WHERE f.userId = :userId AND f.isDeleted = false " +
             "GROUP BY f.contentType ORDER BY COUNT(f) DESC")
     List<Object[]> getContentTypeStatistics(@Param("userId") String userId);
+
 }
