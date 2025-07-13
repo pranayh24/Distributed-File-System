@@ -71,7 +71,9 @@ public class SearchServiceImpl implements SearchService {
 
     @Override
     public SearchResult getRecentFiles(String userId, int page, int size) throws Exception {
-        return null;
+        Pageable pageable = PageRequest.of(page, size);
+        Page<FileMetadata> resultPage = fileMetadataRepository.findRecentFiles(userId, pageable);
+        return convertToSearchResult(resultPage, null);
     }
 
     @Override
