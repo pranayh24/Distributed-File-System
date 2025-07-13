@@ -78,7 +78,10 @@ public class SearchServiceImpl implements SearchService {
 
     @Override
     public SearchResult getPopularFiles(String userId, int page, int size) throws Exception {
-        return null;
+        Pageable pageable = PageRequest.of(page, size);
+        Page<FileMetadata> resultPage = fileMetadataRepository.findPopularFiles(userId, pageable);
+
+        return convertToSearchResult(resultPage, null);
     }
 
     @Override
