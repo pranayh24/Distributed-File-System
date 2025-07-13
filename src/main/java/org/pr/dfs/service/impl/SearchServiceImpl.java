@@ -86,12 +86,31 @@ public class SearchServiceImpl implements SearchService {
 
     @Override
     public List<String> getFileNameSuggestions(String userId, String query) throws Exception {
-        return List.of();
+        if(query == null || query.trim().isEmpty()) {
+            return List.of();
+        }
+
+        return fileMetadataRepository.findFileNameSuggestions(userId, query.trim())
+                .stream()
+                .limit(10)
+                .collect(Collectors.toList());
     }
 
     @Override
     public void saveFileMetadata(FileMetadata fileMetadata) throws Exception {
+        try {
+            fileMetadata.setUploadTime(LocalDateTime.now());
+            fileMetadata.setLastModified(LocalDateTime.now());
+            fileMetadata.setLastAccessed(LocalDateTime.now());
+            fileMetadata.setAccessCount(0L);
+            fileMetadata.setIsDeleted(false);
 
+            fileMetadataRepository.save(fileMetadata);
+            log.info("File metadata saved for: {}",  fileMetadata.getFileName());
+        } catch (Exception e) {
+            log.error("Failed to save file metadata for: {}",  fileMetadata.getFileName(), e);
+            throw new RuntimeException("Failed to save file metadata", e);
+        }
     }
 
     @Override
