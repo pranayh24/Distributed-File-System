@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -115,17 +116,44 @@ public class SearchServiceImpl implements SearchService {
 
     @Override
     public void updateFileAccess(String filePath) throws Exception {
+        try {
+            Optional<FileMetadata> optionalMetadata = fileMetadataRepository.findByFilePathAndIsDeletedFalse(filePath);
 
+            if(optionalMetadata.isPresent()) {
+                FileMetadata fileMetadata = optionalMetadata.get();
+                fileMetadata.setLastAccessed(LocalDateTime.now());
+                fileMetadata.setAccessCount(fileMetadata.getAccessCount() + 1);
+
+                fileMetadataRepository.save(fileMetadata);
+                log.debug("Updated access count for file: {}", filePath);
+            }
+        } catch(Exception e) {
+            log.warn("Failed to update access count for file: {}", filePath, e);
+        }
     }
 
     @Override
     public void deleteFileMetadata(String filePath) throws Exception {
+        try {
+            Optional<FileMetadata> optionalMetadata = fileMetadataRepository.findByFilePathAndIsDeletedFalse(filePath);
 
+            if(optionalMetadata.isPresent()) {
+                FileMetadata fileMetadata = optionalMetadata.get();
+                fileMetadata.setIsDeleted(true);
+
+                fileMetadataRepository.save(fileMetadata);
+                log.info("Marked file metadata as deleted: {}", filePath);
+            }
+        } catch(Exception e) {
+            log.error("Failed to delete file metadata for file: {}", filePath, e);
+            throw new RuntimeException("Failed to delete file metadata", e);
+        }
     }
 
     @Override
     public FileMetadata getFileMetadataByPath(String filePath) throws Exception {
-        return null;
+        return fileMetadataRepository.findByFilePathAndIsDeletedFalse(filePath)
+                .orElse(null);
     }
 
     private String getCurrentUserId() {
