@@ -63,7 +63,10 @@ public class SearchServiceImpl implements SearchService {
 
     @Override
     public SearchResult searchByTag(String userId, String tag, int page, int size) throws Exception {
-        return null;
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "uploadTime"));
+        Page<FileMetadata> resultPage = fileMetadataRepository.searchByTag(userId, tag, pageable);
+
+        return convertToSearchResult(resultPage, null);
     }
 
     @Override
