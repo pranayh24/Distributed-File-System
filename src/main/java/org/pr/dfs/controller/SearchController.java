@@ -67,6 +67,26 @@ public class SearchController {
         }
     }
 
+    @GetMapping("/recent")
+    @Operation(summary = "Get recent files", description = "Get recent accessed files")
+    public ResponseEntity<ApiResponse<SearchResult>> getRecentFiles(@Parameter(description = "Page number") @RequestParam(defaultValue = "0") int page, @Parameter(description = "Page size") @RequestParam(defaultValue = "20") int size) {
+        try {
+            User currentUser = validateUser();
+            log.info("User {} getting recent files", currentUser.getUsername());
+
+            SearchResult result = searchService.getRecentFiles(currentUser.getUsername(), page, size);
+
+            return ResponseEntity.ok(ApiResponse.success("Recent files retrieved successfully", result));
+        } catch(IllegalStateException e) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Authentication required"));
+        } catch(Exception e) {
+            log.error("Error getting recent files", e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Failed to get recent files: " + e.getMessage()));
+        }
+    }
+
     private User validateUser() {
         User currentUser = UserContext.getCurrentUser();
         if (currentUser == null) {
