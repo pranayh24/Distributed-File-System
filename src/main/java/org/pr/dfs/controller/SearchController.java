@@ -1,6 +1,7 @@
 package org.pr.dfs.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,10 +13,9 @@ import org.pr.dfs.model.UserContext;
 import org.pr.dfs.service.SearchService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @Slf4j
 @RestController
@@ -44,6 +44,26 @@ public class SearchController {
             log.error("Error searching files", e);
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error("Search failed: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/suggestions")
+    @Operation(summary = "Get search suggestions", description = "Get file name suggestions for autocomplete")
+    public ResponseEntity<ApiResponse<List<String>>> getSearchSuggestions(@Parameter(description = "Search query for suggestions") @RequestParam String query) {
+        try {
+            User currentUser = validateUser();
+            log.debug("User {} getting suggestions for: {}", currentUser.getUsername(), query);
+
+            List<String> suggestions = searchService.getFileNameSuggestions(currentUser.getUsername(),query);
+
+            return ResponseEntity.ok(ApiResponse.success("Suggestions retrieved successfully", suggestions));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Authentication required"));
+        } catch (Exception e) {
+            log.error("Error getting search suggestions", e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Failed to get suggestions: " + e.getMessage()));
         }
     }
 
