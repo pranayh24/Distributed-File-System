@@ -11,7 +11,6 @@ import org.pr.dfs.dto.SearchResult;
 import org.pr.dfs.model.User;
 import org.pr.dfs.model.UserContext;
 import org.pr.dfs.service.SearchService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -129,9 +128,6 @@ public class SearchController {
             return ResponseEntity.badRequest().body(ApiResponse.error("Tag search failed: " + e.getMessage()));
         }
     }
-
-
-
 
     private User validateUser() {
         User currentUser = UserContext.getCurrentUser();

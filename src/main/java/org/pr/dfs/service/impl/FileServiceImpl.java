@@ -193,17 +193,21 @@ public class FileServiceImpl implements FileService {
         log.info("User {} downloading file: {} (resolved to: {})",
                 currentUser.getUsername(), normalizedPath, userScopedPath);
 
-        // Try to get from distributed nodes first
+        try {
+            searchService.updateFileAccess(userScopedPath);
+        } catch (Exception e) {
+            log.warn("Failed to update file access tracking: {}", e.getMessage());
+        }
+
         byte[] fileData = simpleNodeService.retrieveFile(userScopedPath);
         if (fileData != null) {
             log.info("File {} retrieved from distributed nodes", userScopedPath);
-            // Create temporary file for Resource
+
             Path tempFile = Files.createTempFile("dfs_download_", ".tmp");
             Files.write(tempFile, fileData);
             return new UrlResource(tempFile.toUri());
         }
 
-        // Fallback to local storage
         Path fullPath = Paths.get(dfsConfig.getStorage().getPath(), userScopedPath);
 
         if (!Files.exists(fullPath)) {
@@ -227,6 +231,15 @@ public class FileServiceImpl implements FileService {
         log.info("User {} getting file info: {} (resolved to: {})",
                 currentUser.getUsername(), normalizedPath, userScopedPath);
 
+        try {
+            FileMetadata dbMetadata = searchService.getFileMetadataByPath(userScopedPath);
+            if(dbMetadata != null) {
+                return convertFileMetadataToDto(dbMetadata);
+            }
+        } catch(Exception e) {
+            log.warn("Failed to get metadata from database, falling back to file system: {}", e.getMessage());
+        }
+
         Path fullPath = Paths.get(dfsConfig.getStorage().getPath(), userScopedPath);
 
         if (!Files.exists(fullPath)) {
@@ -238,7 +251,7 @@ public class FileServiceImpl implements FileService {
         }
 
         File file = fullPath.toFile();
-        return createFileMetadata(file, userScopedPath, 3); // Default replication factor
+        return createFileMetadata(file, userScopedPath, 3);
     }
 
     @Override
@@ -268,6 +281,12 @@ public class FileServiceImpl implements FileService {
             userService.updateUserStorageUsage(currentUser.getUserId(), -fileSize);
 
             try {
+                searchService.deleteFileMetadata(userScopedPath);
+            } catch (Exception e) {
+                log.warn("Failed to delete metadata from database: {}", e.getMessage());
+            }
+
+            try {
                 replicationManager.handleFileDeletion(userScopedPath);
             } catch (Exception e) {
                 log.warn("Failed to clean up replication for deleted file {}: {}", userScopedPath, e.getMessage());
@@ -275,6 +294,21 @@ public class FileServiceImpl implements FileService {
         }
 
         return deleted;
+    }
+
+    private FileMetaDataDto convertFileMetadataToDto(FileMetadata metadata) {
+        return FileMetaDataDto.builder()
+                .name(metadata.getFileName())
+                .path(metadata.getFilePath())
+                .size(metadata.getFileSize())
+                .contentType(metadata.getContentType())
+                .uploadTime(metadata.getUploadTime())
+                .lastModified(metadata.getLastModified())
+                .checksum(metadata.getChecksum())
+                .replicationFactor(metadata.getReplicationFactor())
+                .currentReplicas(metadata.getCurrentReplicas())
+                .isDirectory(false)
+                .build();
     }
 
     private void processFileUpload(MultipartFile file, Path destinationPath, int replicationFactor) throws IOException {
