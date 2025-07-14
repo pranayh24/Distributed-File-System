@@ -90,8 +90,8 @@ public class SearchController {
     @GetMapping("popular")
     @Operation(summary = "Get popular files", description = "Get most accessed files")
     public ResponseEntity<ApiResponse<SearchResult>> geetPopularFiles(
-            @Parameter(description = "") @RequestParam(defaultValue = "0") int page,
-            @Parameter(description = "") @RequestParam(defaultValue = "20") int size) {
+            @Parameter(description = "Page number") @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Page size") @RequestParam(defaultValue = "20") int size) {
         try {
             User currentUser = validateUser();
             log.info("User {} getting popular files", currentUser.getUsername());
@@ -108,6 +108,29 @@ public class SearchController {
                     .body(ApiResponse.error("Failed to get popular files: " + e.getMessage()));
         }
     }
+
+    @GetMapping("tags/{tag}")
+    @Operation(summary = "Search by tag", description = "Search files by specific tag")
+    public ResponseEntity<ApiResponse<SearchResult>> searchByTag(
+            @Parameter(description = "Tag to search for") @PathVariable String tag,
+            @Parameter(description = "Page number") @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Page size") @RequestParam(defaultValue = "20") int size) {
+        try {
+            User currentUser = validateUser();
+            log.info("User {} getting files by tags", currentUser.getUsername());
+
+            SearchResult result= searchService.searchByTag(currentUser.getUsername(), tag, page, size);
+
+            return ResponseEntity.ok(ApiResponse.success("Search completed successfully", result));
+        } catch(IllegalStateException e) {
+            return ResponseEntity.status(401).body(ApiResponse.error("Authentication required"));
+        } catch(Exception e) {
+            log.error("Error getting files by tags", e);
+            return ResponseEntity.badRequest().body(ApiResponse.error("Tag search failed: " + e.getMessage()));
+        }
+    }
+
+
 
 
     private User validateUser() {
