@@ -87,6 +87,29 @@ public class SearchController {
         }
     }
 
+    @GetMapping("popular")
+    @Operation(summary = "Get popular files", description = "Get most accessed files")
+    public ResponseEntity<ApiResponse<SearchResult>> geetPopularFiles(
+            @Parameter(description = "") @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "") @RequestParam(defaultValue = "20") int size) {
+        try {
+            User currentUser = validateUser();
+            log.info("User {} getting popular files", currentUser.getUsername());
+
+            SearchResult result = searchService.getPopularFiles(currentUser.getUsername(), page, size);
+
+            return ResponseEntity.ok(ApiResponse.success("Popular files retrieved successfully", result));
+        } catch(IllegalStateException e) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Authentication required"));
+        } catch(Exception e) {
+            log.error("Error getting popular files", e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Failed to get popular files: " + e.getMessage()));
+        }
+    }
+
+
     private User validateUser() {
         User currentUser = UserContext.getCurrentUser();
         if (currentUser == null) {
