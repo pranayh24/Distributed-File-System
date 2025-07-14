@@ -1,10 +1,19 @@
 package org.pr.dfs.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.pr.dfs.dto.ApiResponse;
+import org.pr.dfs.dto.SearchRequest;
+import org.pr.dfs.dto.SearchResult;
+import org.pr.dfs.model.User;
+import org.pr.dfs.model.UserContext;
 import org.pr.dfs.service.SearchService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -17,4 +26,32 @@ public class SearchController {
 
     private final SearchService searchService;
 
+    @GetMapping("/files")
+    @Operation(summary = "Search files", description = "Search files using various criteria")
+    public ResponseEntity<ApiResponse<SearchResult>> searchFiles(@ModelAttribute SearchRequest request) {
+        try {
+            User currentUser = validateUser();
+            log.info("User {} searching files with query: {}", currentUser.getUsername(), request.getQuery());
+
+            SearchResult result = searchService.searchFiles(request);
+
+            return ResponseEntity.ok(ApiResponse.success("Search completed successfully", result));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Authentication required"));
+        }
+        catch(Exception e) {
+            log.error("Error searching files", e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Search failed: " + e.getMessage()));
+        }
+    }
+
+    private User validateUser() {
+        User currentUser = UserContext.getCurrentUser();
+        if (currentUser == null) {
+            throw new IllegalStateException("No authenticated user found");
+        }
+        return currentUser;
+    }
 }
