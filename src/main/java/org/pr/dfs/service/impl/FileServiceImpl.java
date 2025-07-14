@@ -4,11 +4,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.pr.dfs.config.DfsConfig;
 import org.pr.dfs.dto.FileMetaDataDto;
+import org.pr.dfs.dto.FileMetadata;
 import org.pr.dfs.dto.FileUploadRequest;
 import org.pr.dfs.model.*;
 import org.pr.dfs.replication.NodeManager;
 import org.pr.dfs.replication.ReplicationManager;
 import org.pr.dfs.service.FileService;
+import org.pr.dfs.service.SearchService;
 import org.pr.dfs.service.SimpleNodeService;
 import org.pr.dfs.service.UserService;
 import org.pr.dfs.utils.FileUtils;
@@ -24,10 +26,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -40,7 +39,8 @@ public class FileServiceImpl implements FileService {
     private final ReplicationManager replicationManager;
     private final VersionManager versionManager;
     private final UserService userService;
-    private final SimpleNodeService simpleNodeService; // Added simple node service
+    private final SimpleNodeService simpleNodeService;
+    private final SearchService searchService;
 
     private static final int CHUNK_SIZE = 1024 * 1024; // 1MB chunks
 
@@ -87,6 +87,9 @@ public class FileServiceImpl implements FileService {
             }
 
             FileMetaDataDto result = processDistributedUpload(file, userScopedPath, request.getReplicationFactor());
+
+            FileMetadata fileMetadata = createFileMetadata(file, userScopedPath, currentUser, request);
+            searchService.saveFileMetadata(fileMetadata);
 
             userService.updateUserStorageUsage(currentUser.getUserId(), file.getSize());
 
@@ -318,6 +321,29 @@ public class FileServiceImpl implements FileService {
         return calculatedChecksum.equals(chunk.getChecksum());
     }
 
+    private FileMetadata createFileMetadata(MultipartFile file, String userScopedPath, User currentUser, FileUploadRequest request) {
+        String fileId = UUID.randomUUID().toString();
+
+        return FileMetadata.builder()
+                .fileId(fileId)
+                .fileName(file.getOriginalFilename())
+                .filePath(userScopedPath)
+                .userId(currentUser.getUserId())
+                .fileSize(file.getSize())
+                .contentType(file.getContentType())
+                .uploadTime(LocalDateTime.now())
+                .lastModified(LocalDateTime.now())
+                .lastAccessed(LocalDateTime.now())
+                .checksum(calculateChecksum(file))
+                .description(request.getComment())
+                .tags(extractTags(request.getComment()))
+                .replicationFactor(request.getReplicationFactor())
+                .currentReplicas(1)
+                .accessCount(0L)
+                .isDeleted(false)
+                .build();
+    }
+
     private FileMetaDataDto createFileMetadata(File file, String relativePath, int replicationFactor) {
         FileMetaDataDto metadata = new FileMetaDataDto();
         metadata.setName(file.getName());
@@ -341,6 +367,32 @@ public class FileServiceImpl implements FileService {
         metadata.setCurrentReplicas(getCurrentReplicas(relativePath));
 
         return metadata;
+    }
+
+    private String calculateChecksum(MultipartFile file) {
+        try {
+            byte[] fileBytes = file.getBytes();
+            return FileUtils.calculateCheckSum(fileBytes);
+        } catch (Exception e) {
+            log.warn("Failed to calculate checksum for file: {}", file.getOriginalFilename());
+            return null;
+        }
+    }
+
+    private Set<String> extractTags(String comment) {
+        if (comment == null || comment.trim().isEmpty()) {
+            return new HashSet<>();
+        }
+
+        Set<String> tags = new HashSet<>();
+        String[] words = comment.split("\\s+");
+        for (String word : words) {
+            if (word.startsWith("#") && word.length() > 1) {
+                tags.add(word.substring(1).toLowerCase());
+            }
+        }
+
+        return tags;
     }
 
     private int getReplicationFactor(String filePath) {
