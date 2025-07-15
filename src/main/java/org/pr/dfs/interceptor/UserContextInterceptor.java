@@ -85,7 +85,8 @@ public class UserContextInterceptor implements HandlerInterceptor {
     private boolean requiresAuthentication(String requestPath) {
         boolean requires = requestPath.contains("/files") ||
                 requestPath.contains("/directories") ||
-                requestPath.contains("/versions");
+                requestPath.contains("/versions") ||
+                requestPath.contains("/search");
         log.info("Requires auth check: {} -> {}", requestPath, requires);
         return requires;
     }
