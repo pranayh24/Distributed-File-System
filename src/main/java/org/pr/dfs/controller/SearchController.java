@@ -53,7 +53,7 @@ public class SearchController {
             User currentUser = validateUser();
             log.debug("User {} getting suggestions for: {}", currentUser.getUsername(), query);
 
-            List<String> suggestions = searchService.getFileNameSuggestions(currentUser.getUsername(),query);
+            List<String> suggestions = searchService.getFileNameSuggestions(currentUser.getUserId(),query);
 
             return ResponseEntity.ok(ApiResponse.success("Suggestions retrieved successfully", suggestions));
         } catch (IllegalStateException e) {
@@ -73,7 +73,7 @@ public class SearchController {
             User currentUser = validateUser();
             log.info("User {} getting recent files", currentUser.getUsername());
 
-            SearchResult result = searchService.getRecentFiles(currentUser.getUsername(), page, size);
+            SearchResult result = searchService.getRecentFiles(currentUser.getUserId(), page, size);
 
             return ResponseEntity.ok(ApiResponse.success("Recent files retrieved successfully", result));
         } catch(IllegalStateException e) {
@@ -88,14 +88,14 @@ public class SearchController {
 
     @GetMapping("popular")
     @Operation(summary = "Get popular files", description = "Get most accessed files")
-    public ResponseEntity<ApiResponse<SearchResult>> geetPopularFiles(
+    public ResponseEntity<ApiResponse<SearchResult>> getPopularFiles(
             @Parameter(description = "Page number") @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "Page size") @RequestParam(defaultValue = "20") int size) {
         try {
             User currentUser = validateUser();
             log.info("User {} getting popular files", currentUser.getUsername());
 
-            SearchResult result = searchService.getPopularFiles(currentUser.getUsername(), page, size);
+            SearchResult result = searchService.getPopularFiles(currentUser.getUserId(), page, size);
 
             return ResponseEntity.ok(ApiResponse.success("Popular files retrieved successfully", result));
         } catch(IllegalStateException e) {
@@ -118,7 +118,7 @@ public class SearchController {
             User currentUser = validateUser();
             log.info("User {} getting files by tags", currentUser.getUsername());
 
-            SearchResult result= searchService.searchByTag(currentUser.getUsername(), tag, page, size);
+            SearchResult result= searchService.searchByTag(currentUser.getUserId(), tag, page, size);
 
             return ResponseEntity.ok(ApiResponse.success("Search completed successfully", result));
         } catch(IllegalStateException e) {
