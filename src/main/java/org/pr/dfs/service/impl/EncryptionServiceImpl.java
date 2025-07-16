@@ -13,6 +13,9 @@ import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.spec.KeySpec;
 import java.time.LocalDateTime;
@@ -144,22 +147,61 @@ public class EncryptionServiceImpl implements EncryptionService {
 
     @Override
     public String encrypt(String plainText, SecretKey userKey) throws Exception {
-        return "";
+        Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+
+        byte[] iv = new byte[GCM_IV_LENGTH];
+        SecureRandom.getInstanceStrong().nextBytes(iv);
+
+        GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH * 8, iv);
+        cipher.init(Cipher.ENCRYPT_MODE, userKey, gcmSpec);
+
+        byte[] encryptedData = cipher.doFinal(plainText.getBytes(StandardCharsets.UTF_8));
+
+        byte[] result = new byte[GCM_IV_LENGTH + encryptedData.length];
+        System.arraycopy(iv, 0, result, 0, GCM_IV_LENGTH);
+        System.arraycopy(encryptedData, 0, result, GCM_IV_LENGTH, encryptedData.length);
+
+        return Base64.getEncoder().encodeToString(result);
     }
 
     @Override
     public String decrypt(String encryptedText, SecretKey userKey) throws Exception {
-        return "";
+        byte[] encryptedData = Base64.getDecoder().decode(encryptedText);
+
+        if(encryptedData.length < GCM_IV_LENGTH){
+            throw new IllegalArgumentException("Invalid encrypted data format");
+        }
+
+        byte[] iv = new byte[GCM_IV_LENGTH];
+        System.arraycopy(encryptedData, 0, iv, 0, GCM_IV_LENGTH);
+
+        byte[] cipherText = new byte[encryptedData.length - GCM_IV_LENGTH];
+        System.arraycopy(encryptedData, GCM_IV_LENGTH, cipherText, 0, cipherText.length);
+
+        Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+        GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH * 8, iv);
+        cipher.init(Cipher.DECRYPT_MODE, userKey, gcmSpec);
+
+        byte[] decryptedData = cipher.doFinal(cipherText);
+
+        return new String(decryptedData, StandardCharsets.UTF_8);
     }
 
     @Override
     public String calculateFileHash(byte[] data) {
-        return "";
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(data);
+            return Base64.getEncoder().encodeToString(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 algorithm not available", e);
+        }
     }
 
     @Override
     public boolean verifyFileIntegrity(byte[] data, String expectedHash) {
-        return false;
+        String actualHash = calculateFileHash(data);
+        return actualHash.equals(expectedHash);
     }
 
     private SecretKey deriveKeyFromPassword(String password, String salt) throws Exception{
