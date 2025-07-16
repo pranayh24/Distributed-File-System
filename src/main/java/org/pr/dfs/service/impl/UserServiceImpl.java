@@ -5,9 +5,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.pr.dfs.config.DfsConfig;
 import org.pr.dfs.model.User;
 import org.pr.dfs.repository.UserRepository;
+import org.pr.dfs.service.EncryptionService;
 import org.pr.dfs.service.UserService;
 import org.springframework.stereotype.Service;
 
+import javax.crypto.SecretKey;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,10 +26,10 @@ public class UserServiceImpl implements UserService {
 
     private final DfsConfig dfsConfig;
     private final UserRepository userRepository;
+    private final EncryptionService encryptionService;
 
     @Override
     public User createUser(String username, String email, String password) throws Exception {
-        // Check if username already exists
         User existingUser = userRepository.findByUsername(username);
         if(existingUser != null) {
             throw new IllegalArgumentException("Username already exists: " + username);
@@ -48,8 +50,17 @@ public class UserServiceImpl implements UserService {
         user.setQuotaLimit(10L * 1024 * 1024); // 10 MB for now
         user.setCurrentUsage(0L);
 
-        // Save user to database
         user = userRepository.save(user);
+
+        try {
+            SecretKey userKey = encryptionService.generateUserKey(userId, password);
+            log.info("Generated encryption key for user: {}", username);
+        } catch (Exception e) {
+            log.error("Failed to generate encryption key for user: {}", username);
+
+            userRepository.delete(user);
+            throw new RuntimeException("Failed to create encryption key for user: " + username, e);
+        }
 
         createUserDirectory(userId);
 
@@ -81,7 +92,22 @@ public class UserServiceImpl implements UserService {
         }
 
         String hashedPassword = hashPassword(password);
-        return hashedPassword.equals(user.getPasswordHash());
+        boolean passwordValid = hashedPassword.equals(user.getPasswordHash());
+
+        if(passwordValid) {
+            try {
+                SecretKey userKey = encryptionService.getUserKey(user.getUserId());
+                if(userKey == null) {
+                    log.warn("User {} has no encryption key, regenerating...", username);
+
+                    encryptionService.generateUserKey(user.getUserId(), password);
+                }
+            } catch (Exception e) {
+                log.error("Failed to validate encryption key for user: {}", username, e.getMessage());
+                // for now let the user login
+            }
+        }
+        return passwordValid;
     }
 
     @Override
@@ -114,7 +140,7 @@ public class UserServiceImpl implements UserService {
         }
 
         user.setCurrentUsage(newUsage);
-        userRepository.save(user); // Save updated usage to database
+        userRepository.save(user);
 
         log.debug("Updated storage usage for user {}: {} -> {} (change: {})",
                 user.getUsername(), user.getCurrentUsage() - sizeChange, newUsage, sizeChange);
@@ -124,7 +150,7 @@ public class UserServiceImpl implements UserService {
     public void updateLastLoginTime(String userId) throws Exception {
         User user = getUserById(userId);
         user.setLastLoginAt(LocalDateTime.now());
-        userRepository.save(user); // Save updated login time to database
+        userRepository.save(user);
 
         log.debug("Updated last login time for user: {}", user.getUsername());
     }
@@ -133,5 +159,43 @@ public class UserServiceImpl implements UserService {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         byte[] hash = digest.digest(password.getBytes("UTF-8"));
         return Base64.getEncoder().encodeToString(hash);
+    }
+
+    @Override
+    public void changePassword(String userId, String oldPassword, String newPassword) throws Exception {
+        User user = getUserById(userId);
+
+        String oldPasswordHash = hashPassword(oldPassword);
+        if(!oldPasswordHash.equals(user.getPasswordHash())) {
+            throw new IllegalArgumentException("Invalid current password");
+        }
+
+        SecretKey oldKey = encryptionService.getUserKey(userId);
+        if(oldKey == null) {
+            throw new IllegalArgumentException("No encryption key found for user");
+        }
+
+        String newPasswordHash = hashPassword(newPassword);
+
+        SecretKey newKey = encryptionService.generateUserKey(user.getUserId(), newPassword);
+
+        user.setPasswordHash(newPasswordHash);
+        userRepository.save(user);
+
+        log.info("Password and encryption key updated for user: {}", user.getUsername());
+
+        // todo : re-encrypt all user files with the new key
+        log.warn("Password changed for user {}. Existing files may need re-encryption.", user.getUsername());
+    }
+
+    @Override
+    public boolean hasValidEncryptionKey(String userId) {
+        try {
+            SecretKey key = encryptionService.getUserKey(userId);
+            return key != null;
+        } catch (Exception e) {
+            log.warn("Failed to check encryption key for user {}: {}", userId, e.getMessage());
+            return false;
+        }
     }
 }
