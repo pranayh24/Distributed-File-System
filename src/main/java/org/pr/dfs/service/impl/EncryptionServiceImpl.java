@@ -2,14 +2,21 @@ package org.pr.dfs.service.impl;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.pr.dfs.model.UserEncryptionKey;
 import org.pr.dfs.repository.UserEncryptionRepository;
 import org.pr.dfs.service.EncryptionService;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.PBEKeySpec;
+import javax.crypto.spec.SecretKeySpec;
 import java.security.SecureRandom;
+import java.security.spec.KeySpec;
+import java.time.LocalDateTime;
+import java.util.Base64;
 
 @Slf4j
 @Service
@@ -82,17 +89,57 @@ public class EncryptionServiceImpl implements EncryptionService {
 
     @Override
     public SecretKey generateUserKey(String userId, String password) throws Exception {
-        return null;
+        String salt = generateSalt();
+        SecretKey key = deriveKeyFromPassword(password, salt);
+
+        storeUserKey(userId, key, salt);
+
+        log.info("Generated new encryption key for user: {}", userId);
+        return key;
     }
 
     @Override
     public SecretKey getUserKey(String userId) throws Exception {
-        return null;
+        UserEncryptionKey keyEntity = keyRepository.findByUserId(userId);
+        if(keyEntity == null){
+            return  null;
+        }
+
+        byte[] keyBytes = Base64.getDecoder().decode(keyEntity.getEncryptedKey());
+        return new SecretKeySpec(keyBytes, ALGORITHM);
+    }
+
+    @Override
+    public void storeUserKey(String userId, SecretKey key) throws Exception{
+        storeUserKey(userId, key, generateSalt());
+    }
+
+    private void storeUserKey(String userId, SecretKey key, String salt) throws Exception {
+        String encodedKey = Base64.getEncoder().encodeToString(key.getEncoded());
+
+        UserEncryptionKey keyEntity = keyRepository.findByUserId(userId);
+        if(keyEntity == null){
+            keyEntity = new UserEncryptionKey();
+            keyEntity.setUserId(userId);
+        }
+
+        keyEntity.setEncryptedKey(encodedKey);
+        keyEntity.setSalt(salt);
+        keyEntity.setAlgorithm(ALGORITHM);
+        keyEntity.setKeyLength(KEY_LENGTH);
+        keyEntity.setCreatedAt(LocalDateTime.now());
+        keyEntity.setLastUsed(LocalDateTime.now());
+
+        keyRepository.save(keyEntity);
+        log.debug("Stored encryption key for user: {}", userId);
     }
 
     @Override
     public String generateSalt() {
-        return "";
+        SecureRandom random = new SecureRandom();
+        byte[] salt = new byte[SALT_LENGTH];
+        random.nextBytes(salt);
+        return Base64.getEncoder().encodeToString(salt);
     }
 
     @Override
@@ -113,5 +160,15 @@ public class EncryptionServiceImpl implements EncryptionService {
     @Override
     public boolean verifyFileIntegrity(byte[] data, String expectedHash) {
         return false;
+    }
+
+    private SecretKey deriveKeyFromPassword(String password, String salt) throws Exception{
+        SecretKeyFactory factory = SecretKeyFactory.getInstance(KEY_DERIVATION_ALGORITHM);
+        byte[] saltBytes = Base64.getDecoder().decode(salt);
+
+        KeySpec spec = new PBEKeySpec(password.toCharArray(), saltBytes, ITERATION_COUNT, KEY_LENGTH);
+
+        SecretKey tmp = factory.generateSecret(spec);
+        return new SecretKeySpec(tmp.getEncoded(), ALGORITHM);
     }
 }

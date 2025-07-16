@@ -10,6 +10,8 @@ public interface EncryptionService {
     SecretKey generateUserKey(String userId, String password) throws Exception;
     SecretKey getUserKey(String userId) throws Exception;
 
+    void storeUserKey(String userId, SecretKey key) throws Exception;
+
     String generateSalt();
     String encrypt(String plainText, SecretKey userKey) throws Exception;
     String decrypt(String encryptedText, SecretKey userKey) throws Exception;

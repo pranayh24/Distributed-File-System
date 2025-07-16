@@ -32,7 +32,7 @@ public class UserEncryptionKey {
     private String algorithm;
 
     @Column(nullable = false)
-    private String keyLength;
+    private int keyLength;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
