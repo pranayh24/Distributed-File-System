@@ -54,8 +54,30 @@ public class EncryptionServiceImpl implements EncryptionService {
 
     @Override
     public byte[] decryptFile(byte[] encryptedData, String userId) throws Exception {
+        SecretKey userKey = getUserKey(userId);
+        if(userKey == null){
+            throw new IllegalStateException("No encryption key found for userId: " + userId);
+        }
 
-        return new byte[0];
+        if(encryptedData.length <  GCM_IV_LENGTH){
+            throw new IllegalArgumentException("Invalid encrypted data format");
+        }
+
+        byte[] iv = new byte[GCM_IV_LENGTH];
+        System.arraycopy(encryptedData, 0, iv, 0, GCM_IV_LENGTH);
+
+        byte[] cipherText = new byte[encryptedData.length - GCM_IV_LENGTH];
+        System.arraycopy(encryptedData, GCM_IV_LENGTH, cipherText, 0, cipherText.length);
+
+        Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+        GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH * 8, iv);
+        cipher.init(Cipher.DECRYPT_MODE, userKey, gcmSpec);
+
+        byte[] decryptedData = cipher.doFinal(cipherText);
+
+        log.debug("File decrypted for user: {} (size: {} -> {}", userId, encryptedData.length, decryptedData.length);
+
+        return decryptedData;
     }
 
     @Override
