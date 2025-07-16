@@ -11,4 +11,7 @@ public interface UserService {
     long getUserStorageUsage(String userId) throws Exception;
     void updateUserStorageUsage(String userId, long bytes) throws Exception;
     void updateLastLoginTime(String userId) throws Exception;
+
+    void changePassword(String userId, String oldPassword, String newPassword) throws Exception;
+    boolean hasValidEncryptionKey(String userId);
 }
