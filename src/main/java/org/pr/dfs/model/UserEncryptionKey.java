@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @Entity
 @Table(name = "user_encryption_keys")
-public class EncryptionKey {
+public class UserEncryptionKey {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
