@@ -9,4 +9,11 @@ public interface EncryptionService {
 
     SecretKey generateUserKey(String userId, String password) throws Exception;
     SecretKey getUserKey(String userId) throws Exception;
+
+    String generateSalt();
+    String encrypt(String plainText, SecretKey userKey) throws Exception;
+    String decrypt(String encryptedText, SecretKey userKey) throws Exception;
+
+    String calculateFileHash(byte[] data);
+    boolean verifyFileIntegrity(byte[] data, String expectedHash);
 }
