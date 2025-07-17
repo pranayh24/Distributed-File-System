@@ -1,5 +1,6 @@
 package org.pr.dfs.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -17,9 +18,10 @@ import java.util.Map;
 
 @Slf4j
 @RestController
-@RequestMapping("/test")
+@RequestMapping("/user")
 @RequiredArgsConstructor
-public class TestController {
+@Tag(name = "User management", description = "APIs for user management and security")
+public class UserController {
 
     private final UserService userService;
     private final SessionManager sessionManager;
