@@ -1,5 +1,6 @@
 package org.pr.dfs.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
@@ -116,5 +117,31 @@ public class UserController {
 
         UserContext.clear();
         return ResponseEntity.ok(ApiResponse.success("Logged out successfully", null));
+    }
+
+    @GetMapping("/profile")
+    @Operation(summary = "Get user profile", description = "Get current user's profile information")
+    public ResponseEntity<ApiResponse<User>> getUserProfile() {
+        try {
+            User currentUser = validateUser();
+            log.info("User {} retrieving profile", currentUser.getUsername());
+
+            return ResponseEntity.ok(ApiResponse.success(currentUser));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Authentication required"));
+        } catch (Exception e) {
+            log.error("Error retrieving user profile", e);
+            return  ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Failed to retrieve profile" + e.getMessage()));
+        }
+    }
+
+    private User validateUser() {
+        User currentUser = UserContext.getCurrentUser();
+        if (currentUser == null) {
+            throw new IllegalStateException("No authenticated user found");
+        }
+        return currentUser;
     }
 }
