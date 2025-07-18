@@ -137,6 +137,42 @@ public class UserController {
         }
     }
 
+    @PostMapping("/change-password")
+    @Operation(summary = "Change password", description = "Change user password and regenerate encryption key")
+    public ResponseEntity<ApiResponse<String>> changePassword(@RequestBody Map<String, String> request) {
+        try {
+            User currentUser = validateUser();
+            String oldPassword =  request.get("oldPassword");
+            String newPassword =  request.get("newPassword");
+
+            if(oldPassword == null || newPassword == null) {
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.error("Old Password and New Password are required"));
+            }
+
+            if(newPassword.length() < 8) {
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.error("New Password must be at least 8 characters long"));
+            }
+
+            log.info("User {} changing password", currentUser.getUsername());
+
+            userService.changePassword(currentUser.getUserId(), oldPassword, newPassword);
+
+            return ResponseEntity.ok(ApiResponse.success("Password changed successfully. Please log in again."));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401).
+                    body(ApiResponse.error("Authentication required"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Invalid password: " + e.getMessage()));
+        } catch (Exception e) {
+            log.error("Error changing password", e);
+            return  ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Failed to change password: " + e.getMessage()));
+        }
+    }
+
     private User validateUser() {
         User currentUser = UserContext.getCurrentUser();
         if (currentUser == null) {
