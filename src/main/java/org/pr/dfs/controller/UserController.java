@@ -173,11 +173,49 @@ public class UserController {
         }
     }
 
+    @GetMapping ("/storage-info")
+    @Operation(summary = "Get storage information", description = "Get user's storage usage and quota information")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getStorageInfo() {
+        try {
+            User currentUser = validateUser();
+            log.info("User {} retrieving storage info", currentUser.getUsername());
+
+            long currentUsage = userService.getUserStorageUsage(currentUser.getUserId());
+            long quotaLimit = currentUser.getQuotaLimit();
+            double usagePercentage = quotaLimit > 0 ? (double) quotaLimit / currentUsage * 100 : 0;
+
+            Map<String, Object> result = Map.of(
+                    "currentUsage", currentUsage,
+                    "quotaLimit", quotaLimit,
+                    "usagePercentage", Math.round(usagePercentage * 100) / 100.0,
+                    "availableSpace", quotaLimit - currentUsage,
+                    "formattedUsage", formatBytes(currentUsage),
+                    "formattedQuota", formatBytes(quotaLimit)
+            );
+
+            return ResponseEntity.ok(ApiResponse.success(result));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Authentication required"));
+        } catch (Exception e) {
+            log.error("Error retrieving storage info", e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Failed to retrieve storage info"));
+        }
+    }
+
     private User validateUser() {
         User currentUser = UserContext.getCurrentUser();
         if (currentUser == null) {
             throw new IllegalStateException("No authenticated user found");
         }
         return currentUser;
+    }
+
+    private String formatBytes(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
+        if (bytes < 1024 * 1024 * 1024) return String.format("%.1f MB", bytes / (1024.0 * 1024));
+        return String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024));
     }
 }
