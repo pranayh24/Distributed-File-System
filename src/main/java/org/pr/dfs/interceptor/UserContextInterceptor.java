@@ -71,7 +71,7 @@ public class UserContextInterceptor implements HandlerInterceptor {
     }
 
     private boolean isPublicEndpoint(String requestPath) {
-        boolean isPublic = requestPath.contains("/test/") ||
+        boolean isPublic = requestPath.contains("/user/") ||
                 requestPath.contains("/system/health") ||
                 requestPath.contains("/swagger") ||
                 requestPath.contains("/api-docs") ||
