@@ -10,6 +10,7 @@ import org.pr.dfs.dto.ApiResponse;
 import org.pr.dfs.model.User;
 import org.pr.dfs.model.UserContext;
 import org.pr.dfs.security.SessionManager;
+import org.pr.dfs.service.EncryptionService;
 import org.pr.dfs.service.UserService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -26,6 +27,7 @@ public class UserController {
 
     private final UserService userService;
     private final SessionManager sessionManager;
+    private final EncryptionService encryptionService;
 
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<User>> registerUser(@RequestBody Map<String, String> request) {
@@ -170,6 +172,30 @@ public class UserController {
             log.error("Error changing password", e);
             return  ResponseEntity.badRequest()
                     .body(ApiResponse.error("Failed to change password: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/encryption-status")
+    @Operation(summary = "Check user's encryption status" , description = "Check if user has valid encryption key")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getEncryptionStatus() {
+        try {
+            User currentUser = validateUser();
+
+            boolean hasValidKey = userService.hasValidEncryptionKey(currentUser.getUserId());
+
+            Map<String, Object> encryptionStatus = Map.of(
+                    "hasValidKey", hasValidKey,
+                    "encryptionEnabled", true,
+                    "Algorithm", "AES-256-GCM");
+
+            return ResponseEntity.ok(ApiResponse.success(encryptionStatus));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(401)
+                    .body(ApiResponse.error("Authentication required"));
+        } catch (Exception e) {
+            log.error("Error retrieving encryption status", e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Failed to retrieve encryption status"));
         }
     }
 
