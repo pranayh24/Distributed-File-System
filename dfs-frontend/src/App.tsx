@@ -1,13 +1,18 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
 import './App.css'
-import {Home} from "./pages/Home.tsx";
+import {AuthProvider} from "./context/AuthContext.tsx";
+import { Dashboard } from "./pages/Dashboard.tsx";
+import { ProtectedRoute} from "./components/common/ProtectecRoute.tsx";
+
 
 function App() {
-  const [count, setCount] = useState(0)
 
-  return <Home />;
+  return (
+      <AuthProvider>
+        <ProtectedRoute>
+          <Dashboard />
+        </ProtectedRoute>
+      </AuthProvider>
+  );
 }
 
 export default App

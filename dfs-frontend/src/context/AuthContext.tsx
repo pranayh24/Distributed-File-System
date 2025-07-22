@@ -1,6 +1,6 @@
-import React from "react";
+import React, {useContext, useEffect, useReducer, createContext} from "react";
 import type {LoginRequest, RegisterRequest, User} from "../types";
-import {createContext} from "node:vm";
+import {AuthService} from "../services/authService.ts";
 
 interface AuthState {
     user: User | null;
@@ -81,4 +81,69 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const [state, dispatch] = useReducer(authReducer, initialState);
+
+    useEffect(() => {
+        const user = AuthService.getCurrentUser();
+        const sessionId = AuthService.getSessionId();
+
+        if(user && sessionId) {
+            dispatch({ type: 'SET_USER', payload: user })
+        }
+    }, []);
+
+    const login = async (credentials: LoginRequest) => {
+        try {
+            dispatch({ type: 'AUTH_START' });
+            const { user } = await AuthService.login(credentials);
+            dispatch({ type: 'AUTH_SUCCESS', payload: user });
+        } catch (error : any) {
+            dispatch({ type: 'AUTH_ERROR', payload: error.message });
+            throw error;
+        }
+    };
+
+    const register = async(userData: RegisterRequest) => {
+        try {
+            dispatch({ type: 'AUTH_START' });
+            const { user } = await AuthService.register(userData);
+            dispatch({ type: 'AUTH_SUCCESS', payload: user });
+        } catch (error : any) {
+            dispatch({ type: 'AUTH_ERROR', payload: error.message });
+            throw error;
+        }
+    };
+
+    const logout = async() => {
+        try {
+            await AuthService.logout();
+            dispatch({ type: 'AUTH_LOGOUT' });
+        } catch (error) {
+            console.error("Logout error:", error);
+            dispatch({ type: 'AUTH_LOGOUT' });
+        }
+    };
+
+    const clearError = () => {
+        dispatch({ type: 'CLEAR_ERROR' });
+    };
+
+    const value: AuthContextType = {
+        ...state,
+        login,
+        register,
+        logout,
+        clearError,
+    };
+
+    return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+}
+
+export const useAuth = () => {
+    const context = useContext(AuthContext);
+    if(context == undefined) {
+        throw new Error('useAuth must be used within an AuthProvider');
+    }
+    return context;
+}
