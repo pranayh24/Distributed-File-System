@@ -1,5 +1,4 @@
 import axios from 'axios';
-import {ApiResponse} from "../types";
 
 const API_BASE_URL = "http://localhost:8080/api";
 
@@ -7,7 +6,7 @@ export const api = axios.create({
     baseURL: API_BASE_URL,
     timeout: 30000,
     headers: {
-        'content-Type': 'application/json'
+        'Content-Type': 'application/json'
     },
 });
 
