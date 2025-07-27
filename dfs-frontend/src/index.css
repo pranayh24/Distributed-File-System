@@ -1,11 +1,26 @@
-@import '@fontsource/inter/index.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Custom styles */
 body {
-  @apply font-sans bg-gradient-to-br from-primary-50 to-primary-100 dark:from-gray-950 dark:to-slate-900 min-h-screen;
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+  sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
-.glassy {
-  @apply bg-white/60 dark:bg-gray-800/60 backdrop-blur-md shadow-lg border border-white/20 dark:border-gray-700;
+
+* {
+  box-sizing: border-box;
+}
+
+/* Utility classes */
+.btn-primary {
+  @apply bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors;
+}
+
+.btn-secondary {
+  @apply bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors;
 }
