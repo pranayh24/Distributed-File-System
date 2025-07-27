@@ -190,8 +190,8 @@ public class FileServiceImpl implements FileService {
         String normalizedPath = normalizePath(filePath);
         String userScopedPath = getUserScopedPath(currentUser, normalizedPath);
 
-        log.info("User {} downloading file: {} (resolved to: {})",
-                currentUser.getUsername(), normalizedPath, userScopedPath);
+        log.info("User {} downloading file: {} (normalized: {}, resolved to: {})",
+                currentUser.getUsername(), filePath, normalizedPath, userScopedPath);
 
         try {
             searchService.updateFileAccess(userScopedPath);
@@ -202,27 +202,45 @@ public class FileServiceImpl implements FileService {
         byte[] encryptedFileData = null;
         String fileName = Paths.get(normalizedPath).getFileName().toString();
 
-        encryptedFileData = simpleNodeService.retrieveFile(userScopedPath);
-        if (encryptedFileData != null) {
-            log.info("Encrypted File {} retrieved from distributed nodes", userScopedPath);
-        } else {
-            Path fullPath = Paths.get(dfsConfig.getStorage().getPath(), userScopedPath);
+        // Try to retrieve from distributed nodes first
+        try {
+            encryptedFileData = simpleNodeService.retrieveFile(userScopedPath);
+            if (encryptedFileData != null) {
+                log.info("File {} retrieved from distributed nodes (size: {} bytes)", userScopedPath, encryptedFileData.length);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to retrieve file from distributed nodes: {}", e.getMessage());
+        }
 
-            if(!Files.exists(fullPath)) {
+        // Fallback to local storage if not found in distributed nodes
+        if (encryptedFileData == null) {
+            Path fullPath = Paths.get(dfsConfig.getStorage().getPath(), userScopedPath);
+            log.debug("Attempting to read from local path: {}", fullPath.toAbsolutePath());
+
+            if (!Files.exists(fullPath)) {
+                log.error("File not found at path: {} (absolute: {})", userScopedPath, fullPath.toAbsolutePath());
                 throw new FileNotFoundException("File not found: " + normalizedPath);
             }
 
-            if(!isWithinUserDirectory(currentUser, fullPath)) {
+            if (!isWithinUserDirectory(currentUser, fullPath)) {
+                log.error("Security violation: File {} is outside user directory for user {}",
+                         fullPath.toAbsolutePath(), currentUser.getUsername());
                 throw new SecurityException("Access Denied: File is outside user's directory");
             }
 
-            encryptedFileData = Files.readAllBytes(fullPath);
-            log.info("Encrypted file {} retrieved from local storage", userScopedPath);
+            try {
+                encryptedFileData = Files.readAllBytes(fullPath);
+                log.info("File {} retrieved from local storage (size: {} bytes)", userScopedPath, encryptedFileData.length);
+            } catch (IOException e) {
+                log.error("Failed to read file from local storage: {}", e.getMessage());
+                throw new RuntimeException("Failed to read file: " + e.getMessage(), e);
+            }
         }
 
+        // Decrypt the file data
         try {
             byte[] decryptedFileData = encryptionService.decryptFile(encryptedFileData, currentUser.getUserId());
-            log.info("File decrypted for user {} - Encrypted size: {}, Decrypted size: {}",
+            log.info("File decrypted successfully for user {} - Encrypted size: {}, Decrypted size: {}",
                     currentUser.getUsername(), encryptedFileData.length, decryptedFileData.length);
 
             return new ByteArrayResource(decryptedFileData) {
@@ -232,7 +250,7 @@ public class FileServiceImpl implements FileService {
                 }
             };
         } catch (Exception e) {
-            log.error("Failed to decrypt file {} for user {}: {}", userScopedPath, currentUser.getUsername(), e.getMessage());
+            log.error("Failed to decrypt file {} for user {}: {}", userScopedPath, currentUser.getUsername(), e.getMessage(), e);
             throw new RuntimeException("File decryption failed: " + e.getMessage(), e);
         }
     }

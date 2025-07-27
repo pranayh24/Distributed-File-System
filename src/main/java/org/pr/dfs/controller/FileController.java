@@ -21,6 +21,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.charset.StandardCharsets;
+
 @RestController
 @RequestMapping("/files")
 @RequiredArgsConstructor
@@ -58,14 +60,40 @@ public class FileController {
         }
     }
 
-    @GetMapping("/download/{path}")
+    @GetMapping("/download/**")
     @Operation(summary = "Download a file", description = "Download a file from the distributed file system")
-    public ResponseEntity<Resource> downloadFile(
-            @Parameter(description = "File path") @PathVariable String path) {
+    public ResponseEntity<Resource> downloadFile(HttpServletRequest request) {
 
         try {
             User currentUser = validateUser();
-            log.info("User {} downloading file: {}", currentUser.getUsername(), path);
+
+            // Extract the full path from the request URI
+            String requestURI = request.getRequestURI();
+            String contextPath = request.getContextPath();
+
+            // Remove the context path and the controller mapping
+            String fullPath = requestURI;
+            if (contextPath != null && !contextPath.isEmpty()) {
+                fullPath = requestURI.substring(contextPath.length());
+            }
+
+            // Extract path after /files/download/
+            String path = fullPath.substring("/files/download/".length());
+
+            // URL decode the path
+            path = java.net.URLDecoder.decode(path, StandardCharsets.UTF_8);
+
+            // Normalize the path - convert backslashes to forward slashes
+            path = path.replace("\\", "/");
+
+            // Remove user directory prefix if it exists (e.g., "users/username/" at the start)
+            String userDir = "users/" + currentUser.getUsername() + "/";
+            if (path.startsWith(userDir)) {
+                path = path.substring(userDir.length());
+            }
+
+            log.info("User {} downloading file: {} (original URI: {}, normalized: {})",
+                    currentUser.getUsername(), path, requestURI, path);
 
             Resource resource = fileService.downloadFile(path);
 
@@ -77,7 +105,7 @@ public class FileController {
         } catch (IllegalStateException e) {
             return ResponseEntity.status(401).build();
         } catch (Exception e) {
-            log.error("Error downloading file: {}", path, e);
+            log.error("Error downloading file: {}", e.getMessage(), e);
             return ResponseEntity.badRequest().build();
         }
     }

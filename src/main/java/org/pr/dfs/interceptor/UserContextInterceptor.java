@@ -21,12 +21,20 @@ public class UserContextInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         String requestPath = request.getRequestURI();
+        String method = request.getMethod();
 
         log.info("=== INTERCEPTOR DEBUG ===");
         log.info("Request URI: {}", requestPath);
+        log.info("Request Method: {}", method);
         log.info("Request URL: {}", request.getRequestURL());
         log.info("Context Path: {}", request.getContextPath());
         log.info("Servlet Path: {}", request.getServletPath());
+
+        // IMPORTANT: Allow CORS preflight requests (OPTIONS) to pass through
+        if ("OPTIONS".equalsIgnoreCase(method)) {
+            log.info("CORS preflight request (OPTIONS), allowing access: {}", requestPath);
+            return true;
+        }
 
         // Allow public endpoints
         if (isPublicEndpoint(requestPath)) {
