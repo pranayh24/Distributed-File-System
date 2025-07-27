@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Download, ExternalLink } from 'lucide-react';
-import { FileItem } from './FileManager';
+import { X, Download } from 'lucide-react';
+import type { FileItem } from './types';
 import { FileIcon } from './FileIcon';
-import { fileApi } from '../../services/api';
+import { fileApi } from '../../services/fileApi';
 import { formatFileSize, formatDate } from '../../utils/formatters';
 
 interface FilePreviewProps {
@@ -17,17 +17,11 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
 
     useEffect(() => {
         const loadPreview = async () => {
+            // Since files are encrypted, disable preview functionality
+            // to prevent unwanted downloads with random UUID names
             if (canPreview(file)) {
-                setLoading(true);
-                try {
-                    const response = await fileApi.downloadFile(file.path);
-                    const url = URL.createObjectURL(response.data);
-                    setPreviewUrl(url);
-                } catch (err) {
-                    setError('Failed to load preview');
-                } finally {
-                    setLoading(false);
-                }
+                setError('Preview not available - files are encrypted');
+                return;
             }
         };
 
@@ -41,9 +35,13 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
     }, [file]);
 
     const canPreview = (file: FileItem) => {
-        const extension = file.name.split('.').pop()?.toLowerCase();
-        const previewableExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'pdf', 'txt', 'md'];
-        return previewableExtensions.includes(extension || '');
+        // Disable preview for encrypted files to prevent unwanted downloads
+        return false;
+
+        // Original logic kept for reference:
+        // const extension = file.name.split('.').pop()?.toLowerCase();
+        // const previewableExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'pdf', 'txt', 'md'];
+        // return previewableExtensions.includes(extension || '');
     };
 
     const isImage = (file: FileItem) => {
