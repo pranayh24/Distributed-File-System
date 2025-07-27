@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, X } from 'lucide-react';
 
 interface SearchBarProps {
@@ -15,20 +15,43 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     const [query, setQuery] = useState('');
     const [isFocused, setIsFocused] = useState(false);
     const searchRef = useRef<HTMLInputElement>(null);
+    const debounceRef = useRef<NodeJS.Timeout>();
 
-    // Debounce search to avoid too many API calls
+    // Memoize the search function to prevent unnecessary re-renders
+    const debouncedSearch = useCallback((searchQuery: string) => {
+        if (debounceRef.current) {
+            clearTimeout(debounceRef.current);
+        }
+
+        debounceRef.current = setTimeout(() => {
+            onSearch(searchQuery);
+        }, 500); // Increased debounce time to 500ms
+    }, [onSearch]);
+
+    // Handle query changes
     useEffect(() => {
-        const timeoutId = setTimeout(() => {
-            onSearch(query);
-        }, 300);
+        debouncedSearch(query);
 
-        return () => clearTimeout(timeoutId);
-    }, [query, onSearch]);
+        // Cleanup timeout on unmount
+        return () => {
+            if (debounceRef.current) {
+                clearTimeout(debounceRef.current);
+            }
+        };
+    }, [query, debouncedSearch]);
 
-    const handleClear = () => {
+    const handleClear = useCallback(() => {
         setQuery('');
+        // Clear immediately when user clicks clear
+        if (debounceRef.current) {
+            clearTimeout(debounceRef.current);
+        }
         onSearch('');
-    };
+    }, [onSearch]);
+
+    const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        setQuery(e.target.value);
+    }, []);
 
     return (
         <div className={`relative flex-1 max-w-md ${className}`}>
@@ -44,7 +67,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
                     ref={searchRef}
                     type="text"
                     value={query}
-                    onChange={(e) => setQuery(e.target.value)}
+                    onChange={handleInputChange}
                     onFocus={() => setIsFocused(true)}
                     onBlur={() => setIsFocused(false)}
                     placeholder={placeholder}
@@ -54,6 +77,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
                     <button
                         onClick={handleClear}
                         className="absolute right-3 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                        type="button"
                     >
                         <X size={16} />
                     </button>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileItem } from './FileManager';
+import type { FileItem } from './types';
 import { FileIcon } from './FileIcon';
 import { formatFileSize, formatDate } from '../../utils/formatters';
 

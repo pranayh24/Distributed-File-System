@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Download, Edit, Trash2, Copy, Move, Info } from 'lucide-react';
-import { FileItem } from './FileManager';
+import type { FileItem } from './types';
 
 interface ContextMenuProps {
     x: number;
