@@ -11,7 +11,7 @@ import {
     FileSpreadsheet,
     FileBarChart
 } from 'lucide-react';
-import { FileItem } from './FileManager';
+import type { FileItem } from './types';
 
 interface FileIconProps {
     file: FileItem;

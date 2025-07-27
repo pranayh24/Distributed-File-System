@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { Upload, X, File, CheckCircle, AlertCircle } from 'lucide-react';
-import { fileApi } from '../../services/api';
+import { fileApi } from '../../services/fileApi';
 
 interface FileUploadProps {
     currentPath: string;

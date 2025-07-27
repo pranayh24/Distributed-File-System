@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Folder } from 'lucide-react';
-import { directoryApi } from '../../services/api';
+import { directoryApi } from '../../services/directoryApi';
 
 interface CreateFolderModalProps {
     currentPath: string;
@@ -25,15 +25,50 @@ export const CreateFolderModal: React.FC<CreateFolderModalProps> = ({
             return;
         }
 
+        // Validate folder name
+        const invalidChars = /[<>:"/\\|?*]/;
+        if (invalidChars.test(folderName)) {
+            setError('Folder name contains invalid characters');
+            return;
+        }
+
         setLoading(true);
         setError(null);
 
         try {
             const fullPath = currentPath ? `${currentPath}/${folderName.trim()}` : folderName.trim();
-            await directoryApi.createDirectory(fullPath);
-            onCreateComplete();
+            console.log('Creating directory at path:', fullPath);
+
+            const response = await directoryApi.createDirectory(fullPath);
+            console.log('Directory creation response:', response);
+
+            // Check if the response indicates success
+            if (response.data && (response.data.success === true || response.status === 200 || response.status === 201)) {
+                console.log('Directory created successfully');
+                onCreateComplete();
+            } else {
+                // Handle cases where backend returns success but with different format
+                const errorMessage = response.data?.error || response.data?.message || 'Failed to create folder';
+                console.error('Directory creation failed:', errorMessage);
+                setError(errorMessage);
+            }
         } catch (err: any) {
-            setError(err.response?.data?.error || 'Failed to create folder');
+            console.error('Directory creation error:', err);
+
+            // Better error handling for different response codes
+            if (err.response?.status === 409) {
+                setError('A folder with this name already exists');
+            } else if (err.response?.status === 403) {
+                setError('You do not have permission to create folders here');
+            } else if (err.response?.status === 401) {
+                setError('Authentication required. Please log in again.');
+            } else {
+                const errorMessage = err.response?.data?.error ||
+                                   err.response?.data?.message ||
+                                   err.message ||
+                                   'Failed to create folder';
+                setError(errorMessage);
+            }
         } finally {
             setLoading(false);
         }

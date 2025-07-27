@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { fileApi, directoryApi } from '../services/api';
+import { directoryApi } from '../services/directoryApi';
+import { fileApi } from '../services/fileApi';
 
 export const useFileOperations = () => {
     const [loading, setLoading] = useState(false);
