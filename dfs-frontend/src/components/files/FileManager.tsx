@@ -14,7 +14,11 @@ import { ContextMenu } from './ContextMenu';
 import { useFileOperations } from '../../hooks/useFileOperations';
 import type { FileItem } from './types';
 
-export const FileManager: React.FC = () => {
+interface FileManagerProps {
+    searchQuery?: string;
+}
+
+export const FileManager: React.FC<FileManagerProps> = ({ searchQuery }) => {
     const [files, setFiles] = useState<FileItem[]>([]);
     const [currentPath, setCurrentPath] = useState('');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -280,6 +284,13 @@ export const FileManager: React.FC = () => {
     };
 
     const breadcrumbPath = currentPath.split('/').filter(Boolean);
+
+    // Add useEffect to handle search query changes
+    useEffect(() => {
+        if (searchQuery !== undefined) {
+            handleSearch(searchQuery);
+        }
+    }, [searchQuery, handleSearch]);
 
     return (
         <div className="h-full flex flex-col">
