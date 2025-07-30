@@ -12,7 +12,7 @@ A scalable, fault-tolerant distributed file system implemented in Java (Spring B
    - Efficient chunked file transfer (1MB chunks) with checksum validation (SHA-256) for data integrity.
 
 2. **Replication:**
-   - Configurable replication factor (default: 3 replicas) for reliability.
+   - Configurable replication factor (default: 5 replicas) for reliability.
    - Primary-secondary replication model with dynamic node selection based on health and available space.
    - Supports forced/manual replication for critical files.
 
