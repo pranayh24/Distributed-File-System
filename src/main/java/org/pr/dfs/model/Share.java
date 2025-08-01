@@ -3,6 +3,7 @@ package org.pr.dfs.model;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Entity
@@ -17,7 +18,7 @@ public class Share {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long shareId;
 
-    @Column(nullable = false)
+    @Column(nullable = false, unique = true)
     private String shareKey;
 
     @Column(nullable = false)
@@ -26,12 +27,44 @@ public class Share {
     @Column(nullable = false)
     private String fileId;
 
-    private String password;
+    private String passwordHash;
 
+    @Builder.Default
     private int shareLimit = 5;
 
-    @Column(nullable = false)
-    private String filePath; // will be - users/username/filPath
+    @Builder.Default
+    private int accessCount = 0;
 
-    private List<String> sharedUsersIP;
+    @Column(nullable = false)
+    private String filePath; // will be - users/username/filePath
+
+    @Column(nullable = false)
+    private String fileName;
+
+    private long fileSize;
+
+    @ElementCollection
+    @CollectionTable(name = "share_access_ip", joinColumns = @JoinColumn(name = "share_id"))
+    @Column(name = "ip_address")
+    private List<String> accessedFromIPs;
+
+    @Column(nullable = false)
+    private LocalDateTime createdAt;
+
+    private LocalDateTime expiresAt;
+
+    @Builder.Default
+    private boolean active = true;
+
+    private String description;
+
+    @PrePersist
+    protected void onCreate() {
+        if(createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+        if(expiresAt == null) {
+            expiresAt = createdAt.plusDays(7);
+        }
+    }
 }

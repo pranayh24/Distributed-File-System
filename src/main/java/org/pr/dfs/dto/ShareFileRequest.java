@@ -17,5 +17,5 @@ public class ShareFileRequest {
     @Max(value = 100, message = "Share limit cannot exceed 100")
     private int shareLimit = 5;
 
-    private String description;
+    private String description; // optional
 }
