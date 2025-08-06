@@ -30,19 +30,16 @@ public class UserContextInterceptor implements HandlerInterceptor {
         log.info("Context Path: {}", request.getContextPath());
         log.info("Servlet Path: {}", request.getServletPath());
 
-        // IMPORTANT: Allow CORS preflight requests (OPTIONS) to pass through
         if ("OPTIONS".equalsIgnoreCase(method)) {
             log.info("CORS preflight request (OPTIONS), allowing access: {}", requestPath);
             return true;
         }
 
-        // Allow public endpoints
         if (isPublicEndpoint(requestPath)) {
             log.info("PUBLIC endpoint, allowing access: {}", requestPath);
             return true;
         }
 
-        // Get session ID from header or cookie
         String sessionId = getSessionId(request);
         log.info("Session ID extracted: {}", sessionId);
 
@@ -54,7 +51,6 @@ public class UserContextInterceptor implements HandlerInterceptor {
             log.warn("NO SESSION ID FOUND!");
         }
 
-        // authentication for all file and directory operations
         boolean requiresAuth = requiresAuthentication(requestPath);
         log.info("Path {} requires authentication: {}", requestPath, requiresAuth);
 
@@ -67,6 +63,10 @@ public class UserContextInterceptor implements HandlerInterceptor {
 
             UserContext.setCurrentUser(user);
             log.info("SUCCESS: User context set for user: {} accessing: {}", user.getUsername(), requestPath);
+
+            User verifyUser = UserContext.getCurrentUser();
+            log.info("VERIFY: Immediately after setting - User context contains: {}",
+                    verifyUser != null ? verifyUser.getUsername() : "NULL");
         }
 
         log.info("=== END INTERCEPTOR DEBUG ===");
@@ -84,7 +84,9 @@ public class UserContextInterceptor implements HandlerInterceptor {
                 requestPath.contains("/swagger") ||
                 requestPath.contains("/api-docs") ||
                 requestPath.contains("/v3/api-docs") ||
-                requestPath.contains("/swagger-ui");
+                requestPath.contains("/swagger-ui") ||
+                requestPath.contains("/share/access") ||
+                requestPath.contains("/share/download");
 
         log.info("Is public endpoint check: {} -> {}", requestPath, isPublic);
         return isPublic;
@@ -94,13 +96,16 @@ public class UserContextInterceptor implements HandlerInterceptor {
         boolean requires = requestPath.contains("/files") ||
                 requestPath.contains("/directories") ||
                 requestPath.contains("/versions") ||
-                requestPath.contains("/search");
+                requestPath.contains("/search") ||
+                requestPath.contains("/share/create") ||
+                requestPath.contains("/share/my-shares") ||
+                requestPath.contains("/share/info") ||
+                requestPath.startsWith("/share/") && !requestPath.contains("/share/access");
         log.info("Requires auth check: {} -> {}", requestPath, requires);
         return requires;
     }
 
     private String getSessionId(HttpServletRequest request) {
-        // Log all headers
         log.info("=== HEADERS ===");
         java.util.Enumeration<String> headerNames = request.getHeaderNames();
         while (headerNames.hasMoreElements()) {
@@ -108,11 +113,9 @@ public class UserContextInterceptor implements HandlerInterceptor {
             log.info("Header: {} = {}", headerName, request.getHeader(headerName));
         }
 
-        // Try header first
         String sessionId = request.getHeader("X-Session-ID");
         log.info("Session ID from X-Session-ID header: {}", sessionId);
 
-        // Fallback to cookie
         if (sessionId == null) {
             sessionId = getSessionIdFromCookies(request);
             log.info("Session ID from cookies: {}", sessionId);
