@@ -85,7 +85,6 @@ public class UserContextInterceptor implements HandlerInterceptor {
                 requestPath.contains("/api-docs") ||
                 requestPath.contains("/v3/api-docs") ||
                 requestPath.contains("/swagger-ui") ||
-                requestPath.contains("/share/access") ||
                 requestPath.contains("/share/download");
 
         log.info("Is public endpoint check: {} -> {}", requestPath, isPublic);
@@ -100,7 +99,7 @@ public class UserContextInterceptor implements HandlerInterceptor {
                 requestPath.contains("/share/create") ||
                 requestPath.contains("/share/my-shares") ||
                 requestPath.contains("/share/info") ||
-                requestPath.startsWith("/share/") && !requestPath.contains("/share/access");
+                requestPath.startsWith("/share/") && !requestPath.contains("/share/download");
         log.info("Requires auth check: {} -> {}", requestPath, requires);
         return requires;
     }

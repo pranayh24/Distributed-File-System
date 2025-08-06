@@ -47,29 +47,6 @@ public class ShareController {
         }
     }
 
-    @PostMapping("/access")
-    @Operation(summary = "Access shared file", description = "Download a shared file using share key")
-    public ResponseEntity<?> accessSharedFile(
-            @Valid @RequestBody AccessSharedFileRequest request,
-            HttpServletRequest httpRequest) {
-        try {
-            String clientIP = getClientIP(httpRequest);
-            log.info("Accessing shared file from IP: {}", clientIP);
-
-            Resource resource = shareService.accessSharedFile(request, clientIP);
-
-            return ResponseEntity.ok()
-                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                    .header(HttpHeaders.CONTENT_DISPOSITION,
-                            "attachment; filename=\"" + resource.getFilename() + "\"")
-                    .body(resource);
-        } catch (Exception e) {
-            log.error("Error accessing shared file", e);
-            return ResponseEntity.status(401)
-                    .body(ApiResponse.error("Failed to access shared file: " + e.getMessage()));
-        }
-    }
-
     @GetMapping("/{shareKey}")
     @Operation(summary = "Get share information", description = "Get information about a shared file")
     public ResponseEntity<ApiResponse<ShareFileResponse>> getShareInfo(
