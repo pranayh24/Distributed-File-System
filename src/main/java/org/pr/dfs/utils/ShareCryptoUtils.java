@@ -1,6 +1,14 @@
 package org.pr.dfs.utils;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
+import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -9,26 +17,48 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 @Slf4j
 @Component
 public class ShareCryptoUtils {
 
+    private static final String ALGORITHM = "AES";
+    private static final String TRANSFORMATION = "AES/ECB/PKCS5Padding";
     private static final String SECRET_KEY = "DFS_SHARE_SECRET_KEY"; // for now in dev
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
+    public ShareCryptoUtils() {
+        this.objectMapper = new ObjectMapper();
+        this.objectMapper.registerModule(new JavaTimeModule());
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class SharePayload {
+        @JsonProperty("userId")
         public String userId;
+
+        @JsonProperty("filePath")
         public String filePath;
+
+        @JsonProperty("fileName")
         public String fileName;
+
+        @JsonProperty("expiresAt")
+        @JsonDeserialize(using = LocalDateTimeDeserializer.class)
+        @JsonSerialize(using = LocalDateTimeSerializer.class)
         public LocalDateTime expiresAt;
+
+        @JsonProperty("usePassword")
         public boolean hasPassword;
+
+        @JsonProperty("passwordHash")
         public String passwordHash;
+
+        @JsonProperty("shareLimit")
         public int shareLimit;
+
+        @JsonProperty("trackingId")
         public String trackingId; // for db tracking
     }
 
@@ -69,22 +99,29 @@ public class ShareCryptoUtils {
             String encryptedPayload = new String(encryptedBytes, StandardCharsets.UTF_8);
             String jsonPayload = decrypt(encryptedPayload);
 
-            Map<String, Object> payloadMap = objectMapper.readValue(jsonPayload, Map.class);
+            log.debug("Decrypted JSON payload: {}", jsonPayload);
 
-            SharePayload payload = new SharePayload();
-            payload.userId = (String) payloadMap.get("userId");
-            payload.filePath = (String) payloadMap.get("filePath");
-            payload.fileName = (String) payloadMap.get("fileName");
-            payload.shareLimit = ((Number) payloadMap.get("shareLimit")).intValue();
-            payload.expiresAt = LocalDateTime.parse((String) payloadMap.get("expiresAt"));
-            payload.hasPassword = (Boolean) payloadMap.get("hasPassword");
-            payload.passwordHash = (String) payloadMap.get("passwordHash");
-            payload.trackingId = (String) payloadMap.get("trackingId");
+            SharePayload payload = objectMapper.readValue(jsonPayload, SharePayload.class);
 
             return payload;
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid share key", e);
         }
+    }
+
+    private String safeGetString(Map<String, Object> map, String key) {
+        Object value = map.get(key);
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof String) {
+            return (String) value;
+        }
+        if (value instanceof List) {
+            List<?> list = (List<?>) value;
+            return list.isEmpty() ? null : String.valueOf(list.get(0));
+        }
+        return String.valueOf(value);
     }
 
     public boolean isShareValid(SharePayload payload) {
