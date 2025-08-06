@@ -9,17 +9,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.pr.dfs.dto.ApiResponse;
 import org.pr.dfs.dto.FileMetaDataDto;
 import org.pr.dfs.dto.FileUploadRequest;
-import org.pr.dfs.dto.MoveRequest;
 import org.pr.dfs.model.User;
 import org.pr.dfs.model.UserContext;
 import org.pr.dfs.service.FileService;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
 
@@ -67,26 +64,20 @@ public class FileController {
         try {
             User currentUser = validateUser();
 
-            // Extract the full path from the request URI
             String requestURI = request.getRequestURI();
             String contextPath = request.getContextPath();
 
-            // Remove the context path and the controller mapping
             String fullPath = requestURI;
             if (contextPath != null && !contextPath.isEmpty()) {
                 fullPath = requestURI.substring(contextPath.length());
             }
 
-            // Extract path after /files/download/
             String path = fullPath.substring("/files/download/".length());
 
-            // URL decode the path
             path = java.net.URLDecoder.decode(path, StandardCharsets.UTF_8);
 
-            // Normalize the path - convert backslashes to forward slashes
             path = path.replace("\\", "/");
 
-            // Remove user directory prefix if it exists (e.g., "users/username/" at the start)
             String userDir = "users/" + currentUser.getUsername() + "/";
             if (path.startsWith(userDir)) {
                 path = path.substring(userDir.length());
