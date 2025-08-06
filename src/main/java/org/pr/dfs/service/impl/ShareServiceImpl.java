@@ -47,7 +47,7 @@ public class ShareServiceImpl implements ShareService {
 
         log.info("User {} creating share for file: {}", currentUser.getUsername(), request.getFilePath());
 
-        var fileMetadata = fileService.getFileMetaData(request.getFilePath());
+        FileMetaDataDto fileMetadata = fileService.getFileMetaData(request.getFilePath());
         if(fileMetadata == null) {
             throw new IllegalArgumentException("File not found: " + request.getFilePath());
         }
@@ -194,12 +194,12 @@ public class ShareServiceImpl implements ShareService {
         }
     }
 
-    @Async
     protected CompletableFuture<Void> asyncSaveToDatabase(String shareKey, User user,
                                                           ShareFileRequest request,
                                                           FileMetaDataDto fileMetadata,
                                                           String userScopedPath,
                                                           LocalDateTime expiresAt) {
+        //UserContext.setCurrentUser(user);
         try {
             ShareCryptoUtils.SharePayload payload = shareUtils.decryptShareKey(shareKey);
 
@@ -264,7 +264,11 @@ public class ShareServiceImpl implements ShareService {
 
     private User validateUser() {
         User currentUser = UserContext.getCurrentUser();
+        log.info("VALIDATE USER DEBUG: Current user from context: {}",
+                currentUser != null ? currentUser.getUsername() : "NULL");
+
         if (currentUser == null) {
+            log.error("CRITICAL: UserContext.getCurrentUser() returned null despite interceptor success");
             throw new IllegalStateException("No authenticated user found");
         }
         return currentUser;
