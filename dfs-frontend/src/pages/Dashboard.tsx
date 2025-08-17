@@ -3,26 +3,26 @@ import { useAuth } from '../context/AuthContext';
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import { formatFileSize } from '../utils/formatters';
+import { HardDrive, File, Clock, Server } from 'lucide-react';
 
 export default function DashboardPage() {
     const { user } = useAuth();
     const [recentFiles, setRecentFiles] = useState<any[]>([]);
-    const [nodeHealth, setNodeHealth] = useState<any>({});
+    const [systemHealth, setSystemHealth] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         async function fetchData() {
             setLoading(true);
             try {
-                // Fetch recent files
-                const filesRes = await api.get('/directories/');
-                setRecentFiles(filesRes.data.data?.slice(0, 5) || []);
-
-                // Fetch node health
-                const healthRes = await api.get('/system/health');
-                setNodeHealth(healthRes.data.nodes || {});
+                const [filesRes, healthRes] = await Promise.all([
+                    api.get('/search/recent?size=5'), // Using the recent files endpoint
+                    api.get('/system/health')
+                ]);
+                setRecentFiles(filesRes.data.data?.files || []);
+                setSystemHealth(healthRes.data.data || {});
             } catch (e) {
-                // Handle error
+                console.error("Failed to fetch dashboard data:", e);
             } finally {
                 setLoading(false);
             }
@@ -34,62 +34,54 @@ export default function DashboardPage() {
 
     return (
         <DashboardShell>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
-                <div className="glassy rounded-xl p-6 flex flex-col items-center shadow-lg">
-                    <span className="text-5xl font-bold text-primary-600">{user?.username?.[0]?.toUpperCase() || "U"}</span>
-                    <h2 className="mt-3 text-xl font-semibold">{user?.username}</h2>
-                    <p className="text-gray-500">{user?.email}</p>
-                </div>
-                <div className="glassy rounded-xl p-6 flex flex-col items-center shadow-lg">
-                    <div className="w-24 h-24 rounded-full bg-primary-100 flex items-center justify-center relative">
-                        <svg className="w-full h-full absolute top-0 left-0" viewBox="0 0 100 100">
-                            <circle cx="50" cy="50" r="45" stroke="#e5e7eb" strokeWidth="10" fill="none" />
-                            <circle
-                                cx="50" cy="50" r="45"
-                                stroke="#437ef7"
-                                strokeWidth="10"
-                                fill="none"
-                                strokeDasharray={`${percentUsed * 2.83} 283`}
-                                strokeLinecap="round"
-                                transform="rotate(-90 50 50)"
-                            />
-                        </svg>
-                        <span className="text-2xl font-bold text-primary-600 z-10">{percentUsed}%</span>
+            <h1 className="text-3xl font-bold mb-6 text-gray-900 dark:text-white">Welcome, {user?.username}!</h1>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                {/* Storage Usage */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center mb-4">
+                        <div className="p-3 rounded-full bg-primary-100 dark:bg-primary-900/50">
+                            <HardDrive className="h-6 w-6 text-primary-600 dark:text-primary-400" />
+                        </div>
+                        <h3 className="ml-4 text-lg font-semibold text-gray-900 dark:text-white">Storage</h3>
                     </div>
-                    <div className="mt-3 text-lg font-semibold">Storage Used</div>
-                    <div className="text-gray-500">{formatFileSize(user?.currentUsage || 0)} / {formatFileSize(user?.quotaLimit || 0)}</div>
+                    <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700 mb-2">
+                        <div className="bg-primary-600 h-2.5 rounded-full" style={{ width: `${percentUsed}%` }}></div>
+                    </div>
+                    <p className="text-sm text-gray-600 dark:text-gray-300">{formatFileSize(user?.currentUsage || 0)} of {formatFileSize(user?.quotaLimit || 0)} used</p>
                 </div>
-                <div className="glassy rounded-xl p-6 flex flex-col items-center shadow-lg">
-                    <div className="text-lg font-semibold mb-1">Cluster Health</div>
-                    <div className="text-3xl font-bold text-green-600">{nodeHealth.healthyNodes ?? "?"} / {nodeHealth.totalNodes ?? "?"}</div>
-                    <div className="text-xs text-gray-500">healthy nodes</div>
+
+                {/* System Health */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center mb-4">
+                        <div className="p-3 rounded-full bg-green-100 dark:bg-green-900/50">
+                            <Server className="h-6 w-6 text-green-600 dark:text-green-400" />
+                        </div>
+                        <h3 className="ml-4 text-lg font-semibold text-gray-900 dark:text-white">Cluster Health</h3>
+                    </div>
+                    {loading ? <p>Loading...</p> :
+                        <>
+                            <p className="text-3xl font-bold text-gray-900 dark:text-white">{systemHealth?.clusterHealth?.healthyNodes ?? "?"}/{systemHealth?.clusterHealth?.totalNodes ?? "?"}</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-300">nodes are healthy</p>
+                        </>
+                    }
                 </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="glassy rounded-xl p-6 shadow-lg">
-                    <h3 className="text-lg font-semibold mb-4">Recent Files</h3>
-                    <ul>
-                        {recentFiles.length === 0 && <li className="text-gray-400">No files to show.</li>}
-                        {recentFiles.map((file, idx) => (
-                            <li key={idx} className="flex items-center justify-between py-2 border-b last:border-b-0">
-                                <span className="truncate">{file.name}</span>
-                                <span className="text-xs text-gray-500">{formatFileSize(file.size)}</span>
+
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Recent Files</h3>
+                <ul>
+                    {loading ? <p>Loading...</p> : recentFiles.length === 0 ? <li className="text-gray-400">No recent files.</li> :
+                        recentFiles.map((file, idx) => (
+                            <li key={idx} className="flex items-center justify-between py-2 border-b last:border-b-0 border-gray-200 dark:border-gray-700">
+                                <div className="flex items-center">
+                                    <File className="h-5 w-5 mr-3 text-gray-400" />
+                                    <span className="truncate font-medium">{file.fileName}</span>
+                                </div>
+                                <span className="text-sm text-gray-500">{formatFileSize(file.fileSize)}</span>
                             </li>
                         ))}
-                    </ul>
-                </div>
-                <div className="glassy rounded-xl p-6 shadow-lg">
-                    <h3 className="text-lg font-semibold mb-4">Recent Activity</h3>
-                    <ul>
-                        <li className="py-2 text-gray-400 text-sm">Feature coming soon: File uploads, downloads, deletions, etc.</li>
-                    </ul>
-                </div>
+                </ul>
             </div>
-            {loading && (
-                <div className="fixed inset-0 bg-black/10 flex items-center justify-center z-50">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-                </div>
-            )}
         </DashboardShell>
     );
 }
