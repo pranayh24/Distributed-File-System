@@ -3,18 +3,10 @@ package org.pr.dfs.config;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.pr.dfs.interceptor.UserContextInterceptor;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.web.filter.CorsFilter;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
-
-import java.util.Arrays;
-import java.util.List;
 
 @Slf4j
 @Configuration
@@ -25,70 +17,26 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        // Single, permissive CORS config. In production the app is same-origin behind Caddy;
+        // in dev the Vite proxy also makes it same-origin. Reflecting the origin keeps both working
+        // (auth is a JWT in the Authorization header, so this is not a credentials-leak surface).
         registry.addMapping("/**")
                 .allowedOriginPatterns("*")
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH")
                 .allowedHeaders("*")
+                .exposedHeaders("Authorization")
                 .allowCredentials(true)
                 .maxAge(3600);
     }
 
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-
-        // Allow specific origins including the frontend
-        configuration.setAllowedOriginPatterns(List.of(
-            "http://localhost:5173",
-            "http://localhost:3000",
-            "http://127.0.0.1:5173",
-            "http://127.0.0.1:3000"
-        ));
-
-        // Allow all common HTTP methods
-        configuration.setAllowedMethods(Arrays.asList(
-            "GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"
-        ));
-
-        // Allow all headers
-        configuration.setAllowedHeaders(List.of("*"));
-
-        // Allow credentials (cookies, authorization headers)
-        configuration.setAllowCredentials(true);
-
-        // Cache preflight response for 1 hour
-        configuration.setMaxAge(3600L);
-
-        // Expose common headers to the frontend
-        configuration.setExposedHeaders(Arrays.asList(
-            "Authorization",
-            "Content-Type",
-            "X-Total-Count",
-            "X-Session-ID"
-        ));
-
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-
-        return source;
-    }
-
-    @Bean
-    public CorsFilter corsFilter() {
-        return new CorsFilter(corsConfigurationSource());
-    }
-
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        log.info("Registering UserContextInterceptor...");
         registry.addInterceptor(userContextInterceptor)
-                .addPathPatterns("/**")  // Apply to all paths
+                .addPathPatterns("/**")
                 .excludePathPatterns(
-                        "/api/test/**",     // Exclude test endpoints
-                        "/api/system/health", // Exclude health check
-                        "/swagger-ui/**",   // Exclude swagger
-                        "/v3/api-docs/**"   // Exclude api docs
+                        "/api/system/health",
+                        "/swagger-ui/**",
+                        "/v3/api-docs/**"
                 );
-        log.info("UserContextInterceptor registered successfully!");
     }
 }
