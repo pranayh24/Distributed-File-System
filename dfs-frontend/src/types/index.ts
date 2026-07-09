@@ -3,7 +3,7 @@ export interface User {
     username: string;
     email: string;
     createdAt: string;
-    lastLoginAt: string;
+    lastLoginAt: string | null;
     active: boolean;
     userDirectory: string;
     quotaLimit: number;
@@ -18,25 +18,9 @@ export interface ApiResponse<T> {
     timestamp: string;
 }
 
-export interface FileMetadata {
-    name: string;
-    path: string;
-    isDirectory: boolean;
-    size: number;
-    uploadTime?: string;
-    lastModified: string;
-    checksum?: string;
-    replicationFactor?: number;
-    currentReplicas?: number;
-    contentType?: string;
-}
-
-export interface FileUploadRequest {
-    file: File;
-    targetDirectory?: string;
-    replicationFactor?: number;
-    comment?: string;
-    createVersion?: boolean;
+export interface AuthResult {
+    token: string;
+    user: User;
 }
 
 export interface LoginRequest {
@@ -48,4 +32,54 @@ export interface RegisterRequest {
     username: string;
     email: string;
     password: string;
+}
+
+export interface NodeInfo {
+    nodeId: string;
+    address: string;
+    port: number;
+    healthy: boolean;
+    hostedFiles: number;        // replica count on this node
+    hostedFilesList?: string[]; // the actual file paths
+    availableDiskSpace: number;
+    lastHeartbeat?: number;
+}
+
+export interface FilePlacement {
+    filePath: string;
+    fileName: string;
+    size: number;
+    replicationFactor: number;
+    currentReplicas: number;
+    nodeIds: string[];
+    healthyNodeIds: string[];
+    underReplicated: boolean;
+    createdAt: string;
+}
+
+export type DfsEventType =
+    | 'UPLOAD_STARTED'
+    | 'ENCRYPTED'
+    | 'REPLICA_STORED'
+    | 'UPLOAD_COMMITTED'
+    | 'NODE_KILLED'
+    | 'NODE_REVIVED'
+    | 'HEAL_STARTED'
+    | 'REPLICA_RESTORED'
+    | 'HEAL_COMPLETED'
+    | 'FILE_DELETED';
+
+export interface DfsEvent {
+    type: DfsEventType;
+    timestamp: number;
+    message: string;
+    fileName?: string | null;
+    nodeId?: string | null;
+    sourceNodeId?: string | null;
+    replicaIndex?: number | null;
+    replicas?: number | null;
+    replicationFactor?: number | null;
+    size?: number | null;
+    /** client-only unique id for list rendering */
+    _id?: string;
 }

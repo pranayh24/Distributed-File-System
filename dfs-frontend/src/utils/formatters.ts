@@ -1,19 +1,16 @@
-export const formatFileSize = (bytes : number): string => {
-    if(bytes === 0) return '0 bytes';
+export function formatBytes(bytes?: number | null): string {
+    if (bytes == null) return '—';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
 
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
+export function clockTime(ts: number): string {
+    return new Date(ts).toLocaleTimeString('en-GB', { hour12: false });
+}
 
-    return parseFloat((bytes / Math.pow(k , i)).toFixed(2)) + ' ' + sizes[i];
-};
-
-export const formatDate = (dateString: string): string => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-};
+/** short filename from a user-scoped path */
+export function baseName(path: string): string {
+    return path.split('/').pop() || path;
+}

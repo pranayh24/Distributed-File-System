@@ -1,0 +1,9 @@
+dfs-frontend
+target
+.git
+.idea
+storage
+dfs_storage
+logs
+*.log
+Desktop

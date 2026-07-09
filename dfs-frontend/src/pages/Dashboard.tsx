@@ -1,108 +1,205 @@
-import React from 'react';
-import { Layout } from '../components/layout/Layout';
-import { useAuth } from '../context/AuthContext';
-import { formatFileSize, formatDate } from '../utils/formatters';
-import { User, HardDrive, Shield, Clock } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Activity, Server, ShieldCheck, Database } from 'lucide-react';
+import { Layout } from '../components/Layout';
+import { NodeGrid } from '../components/NodeGrid';
+import { EventLog } from '../components/EventLog';
+import { UploadPanel } from '../components/UploadPanel';
+import { PlacementTable } from '../components/PlacementTable';
+import { useEventStream } from '../hooks/useEventStream';
+import { authService } from '../services/authService';
+import { systemService } from '../services/systemService';
+import { fileService } from '../services/fileService';
+import { formatBytes } from '../utils/formatters';
+import type { FilePlacement, NodeInfo } from '../types';
 
-export const Dashboard: React.FC = () => {
-    const { user } = useAuth();
+function Kpi({ label, value, unit, icon, accent }: {
+    label: string;
+    value: string;
+    unit?: string;
+    icon: ReactNode;
+    accent?: string;
+}) {
+    return (
+        <div className="panel p-4">
+            <div className="flex items-center justify-between">
+                <span className="lbl">{label}</span>
+                <span className="text-ink-faint">{icon}</span>
+            </div>
+            <div className={`num mt-2 text-[26px] tracking-tight ${accent ?? ''}`}>
+                {value}
+                {unit && <span className="ml-1 text-[13px] text-ink-dim">{unit}</span>}
+            </div>
+        </div>
+    );
+}
 
-    const usagePercentage = user ? (user.currentUsage / user.quotaLimit) * 100 : 0;
+function Panel({ title, tag, live, children }: {
+    title: string;
+    tag?: string;
+    live?: boolean;
+    children: ReactNode;
+}) {
+    return (
+        <div className="panel p-4">
+            <div className="mb-3.5 flex items-center gap-2.5">
+                <h2 className="m-0 text-[13px] font-semibold">{title}</h2>
+                {tag && <span className={`chip ml-auto ${live ? 'chip-live' : ''}`}>{tag}</span>}
+            </div>
+            {children}
+        </div>
+    );
+}
+
+export function Dashboard() {
+    const token = authService.getToken();
+    const { events, connected } = useEventStream(token);
+
+    const [nodes, setNodes] = useState<NodeInfo[]>([]);
+    const [placement, setPlacement] = useState<FilePlacement[]>([]);
+    const [pulses, setPulses] = useState<Set<string>>(new Set());
+    const [busyNode, setBusyNode] = useState<string | null>(null);
+    const [busyPath, setBusyPath] = useState<string | null>(null);
+    const lastHandled = useRef<string | undefined>(undefined);
+
+    const refresh = useCallback(async () => {
+        try {
+            const [n, p] = await Promise.all([systemService.getNodes(), systemService.getPlacement()]);
+            setNodes(n.sort((a, b) => a.nodeId.localeCompare(b.nodeId, undefined, { numeric: true })));
+            setPlacement(p);
+        } catch {
+            /* transient */
+        }
+    }, []);
+
+    useEffect(() => {
+        refresh();
+        const id = setInterval(refresh, 4000);
+        return () => clearInterval(id);
+    }, [refresh]);
+
+    // react to the newest live event: pulse active nodes and refresh on structural changes
+    useEffect(() => {
+        const latest = events[events.length - 1];
+        if (!latest || latest._id === lastHandled.current) return;
+        lastHandled.current = latest._id;
+
+        if ((latest.type === 'REPLICA_STORED' || latest.type === 'REPLICA_RESTORED') && latest.nodeId) {
+            const id = latest.nodeId;
+            setPulses((prev) => new Set(prev).add(id));
+            setTimeout(() => {
+                setPulses((prev) => {
+                    const next = new Set(prev);
+                    next.delete(id);
+                    return next;
+                });
+            }, 1200);
+        }
+        if (
+            ['UPLOAD_COMMITTED', 'NODE_KILLED', 'NODE_REVIVED', 'HEAL_STARTED', 'HEAL_COMPLETED', 'FILE_DELETED'].includes(
+                latest.type,
+            )
+        ) {
+            refresh();
+        }
+    }, [events, refresh]);
+
+    const kill = async (id: string) => {
+        setBusyNode(id);
+        try {
+            await systemService.killNode(id);
+            await refresh();
+        } finally {
+            setBusyNode(null);
+        }
+    };
+    const revive = async (id: string) => {
+        setBusyNode(id);
+        try {
+            await systemService.reviveNode(id);
+            await refresh();
+        } finally {
+            setBusyNode(null);
+        }
+    };
+
+    const download = async (p: FilePlacement) => {
+        setBusyPath(p.filePath);
+        try {
+            await fileService.download(p.fileName);
+        } catch {
+            /* ignore */
+        } finally {
+            setBusyPath(null);
+        }
+    };
+    const remove = async (p: FilePlacement) => {
+        setBusyPath(p.filePath);
+        try {
+            await fileService.remove(p.fileName);
+            await refresh();
+        } finally {
+            setBusyPath(null);
+        }
+    };
+
+    const online = nodes.filter((n) => n.healthy).length;
+    const encryptedBytes = useMemo(() => placement.reduce((sum, p) => sum + (p.size || 0), 0), [placement]);
+    const factor = placement[0]?.replicationFactor ?? 3;
+
+    // authoritative per-node replica counts derived from placement (matches the Files table)
+    const nodeCounts = useMemo(() => {
+        const m: Record<string, number> = {};
+        placement.forEach((p) => p.nodeIds.forEach((id) => { m[id] = (m[id] ?? 0) + 1; }));
+        return m;
+    }, [placement]);
 
     return (
-        <Layout>
-            <div className="space-y-6">
-                {/* Welcome Section */}
-                <div className="bg-white p-6 rounded-lg shadow-sm border">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                        Welcome back, {user?.username}!
-                    </h2>
-                    <p className="text-gray-600">
-                        Manage your files and monitor your storage usage.
+        <Layout connected={connected}>
+            {/* KPI ribbon */}
+            <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <Kpi label="Nodes online" value={`${online}`} unit={`/ ${nodes.length}`} icon={<Server size={15} />} />
+                <Kpi label="Replication" value={`×${factor}`} unit="factor" icon={<ShieldCheck size={15} />} />
+                <Kpi label="Files" value={`${placement.length}`} icon={<Activity size={15} />} />
+                <Kpi
+                    label="Encrypted"
+                    value={formatBytes(encryptedBytes)}
+                    icon={<Database size={15} />}
+                    accent="text-violet"
+                />
+            </div>
+
+            {/* main grid */}
+            <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+                <div className="flex flex-col gap-4">
+                    <Panel title="Upload Pipeline" tag="live" live>
+                        <UploadPanel events={events} onUploaded={refresh} />
+                    </Panel>
+                    <Panel title="Event Stream" tag="SSE · /events">
+                        <EventLog events={events} />
+                    </Panel>
+                </div>
+
+                <Panel title="Cluster Topology" tag="real-time" live>
+                    <NodeGrid nodes={nodes} counts={nodeCounts} pulses={pulses} busy={busyNode} onKill={kill} onRevive={revive} />
+                    <p className="mt-3.5 font-mono text-[11px] leading-relaxed text-ink-dim">
+                        Kill a node to watch the cluster detect the failure and re-replicate its files to restore{' '}
+                        <span className="text-good">{factor}/{factor}</span> — self-healing, live.
                     </p>
-                </div>
+                </Panel>
+            </div>
 
-                {/* Stats Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-white p-6 rounded-lg shadow-sm border">
-                        <div className="flex items-center">
-                            <HardDrive className="h-8 w-8 text-primary-600" />
-                            <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-600">Storage Used</p>
-                                <p className="text-2xl font-bold text-gray-900">
-                                    {formatFileSize(user?.currentUsage || 0)}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="bg-white p-6 rounded-lg shadow-sm border">
-                        <div className="flex items-center">
-                            <Shield className="h-8 w-8 text-green-600" />
-                            <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-600">Quota Limit</p>
-                                <p className="text-2xl font-bold text-gray-900">
-                                    {formatFileSize(user?.quotaLimit || 0)}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="bg-white p-6 rounded-lg shadow-sm border">
-                        <div className="flex items-center">
-                            <Clock className="h-8 w-8 text-blue-600" />
-                            <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-600">Last Login</p>
-                                <p className="text-lg font-bold text-gray-900">
-                                    {user?.lastLoginAt ? formatDate(user.lastLoginAt) : 'First time'}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Storage Usage */}
-                <div className="bg-white p-6 rounded-lg shadow-sm border">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Storage Usage</h3>
-                    <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                            <span>Used: {formatFileSize(user?.currentUsage || 0)}</span>
-                            <span>Available: {formatFileSize((user?.quotaLimit || 0) - (user?.currentUsage || 0))}</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                                className={`h-2 rounded-full ${
-                                    usagePercentage > 90 ? 'bg-red-600' :
-                                        usagePercentage > 70 ? 'bg-yellow-600' : 'bg-green-600'
-                                }`}
-                                style={{ width: `${Math.min(usagePercentage, 100)}%` }}
-                            ></div>
-                        </div>
-                        <p className="text-xs text-gray-500">
-                            {usagePercentage.toFixed(1)}% of quota used
-                        </p>
-                    </div>
-                </div>
-
-                {/* Quick Actions */}
-                <div className="bg-white p-6 rounded-lg shadow-sm border">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <button className="btn-primary w-full">
-                            Upload Files
-                        </button>
-                        <button className="btn-secondary w-full">
-                            Browse Files
-                        </button>
-                        <button className="btn-secondary w-full">
-                            Create Folder
-                        </button>
-                        <button className="btn-secondary w-full">
-                            View Activity
-                        </button>
-                    </div>
-                </div>
+            {/* files */}
+            <div className="mt-4">
+                <Panel title="Files" tag="per-user · AES-256">
+                    <PlacementTable
+                        placement={placement}
+                        nodes={nodes}
+                        busyPath={busyPath}
+                        onDownload={download}
+                        onDelete={remove}
+                    />
+                </Panel>
             </div>
         </Layout>
     );
-};
+}

@@ -47,7 +47,7 @@ public class UserServiceImpl implements UserService {
         user.setCreatedAt(LocalDateTime.now());
         user.setActive(true);
         user.setUserDirectory(userDirectory);
-        user.setQuotaLimit(10L * 1024 * 1024); // 10 MB for now
+        user.setQuotaLimit(5L * 1024 * 1024 * 1024); // 5 GB
         user.setCurrentUsage(0L);
 
         user = userRepository.save(user);

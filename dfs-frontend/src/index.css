@@ -2,25 +2,141 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom styles */
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-  'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-  sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+:root {
+  color-scheme: dark;
 }
 
 * {
   box-sizing: border-box;
 }
 
-/* Utility classes */
-.btn-primary {
-  @apply bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors;
+html, body, #root {
+  margin: 0;
+  min-height: 100vh;
 }
 
-.btn-secondary {
-  @apply bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors;
+body {
+  font-family: theme('fontFamily.sans');
+  color: theme('colors.ink.DEFAULT');
+  background:
+    radial-gradient(1100px 620px at 82% -8%, rgba(52, 229, 208, 0.07), transparent 60%),
+    radial-gradient(900px 600px at 8% 108%, rgba(154, 124, 246, 0.06), transparent 55%),
+    #080b11;
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* faint mission-control grid behind everything */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+  background-image:
+    linear-gradient(#1c2838 1px, transparent 1px),
+    linear-gradient(90deg, #1c2838 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(circle at 50% 30%, #000, transparent 80%);
+  mask-image: radial-gradient(circle at 50% 30%, #000, transparent 80%);
+}
+
+@layer components {
+  .panel {
+    @apply bg-panel-2/70 border border-line rounded-2xl backdrop-blur-sm;
+  }
+  .lbl {
+    @apply font-mono text-[10.5px] tracking-[0.16em] uppercase text-ink-faint;
+  }
+  .chip {
+    @apply font-mono text-[10px] tracking-[0.08em] uppercase px-2 py-[3px] rounded-md border border-line-b text-ink-dim;
+  }
+  .chip-live {
+    @apply text-cyan border-cyan/30 bg-cyan/[0.06];
+  }
+  .btn {
+    @apply font-mono text-[11.5px] tracking-[0.06em] uppercase rounded-lg px-4 py-2 border border-line-b bg-panel-3 text-ink
+           transition-all inline-flex items-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn:hover:not(:disabled) {
+    @apply border-cyan text-cyan;
+    box-shadow: 0 0 16px rgba(52, 229, 208, 0.15);
+  }
+  .btn-primary {
+    @apply text-cyan border-cyan/40;
+    background: linear-gradient(180deg, rgba(52, 229, 208, 0.16), rgba(52, 229, 208, 0.05));
+  }
+  .btn-danger:hover:not(:disabled) {
+    @apply border-bad text-bad;
+    box-shadow: 0 0 16px rgba(249, 85, 108, 0.15);
+  }
+  .num {
+    @apply font-mono;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* brand mark */
+.logo-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  position: relative;
+  background: linear-gradient(150deg, #182234, #0e141f);
+  border: 1px solid #28394f;
+  box-shadow: 0 0 0 1px rgba(52, 229, 208, 0.08), 0 8px 22px rgba(0, 0, 0, 0.5);
+  flex: 0 0 auto;
+}
+.logo-mark::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  border: 1.5px solid #34e5d0;
+  box-shadow: 0 0 10px rgba(52, 229, 208, 0.45);
+}
+.logo-mark::after {
+  content: "";
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  top: 14px;
+  left: 14px;
+  border-radius: 50%;
+  background: #34e5d0;
+  box-shadow: 0 0 8px #34e5d0;
+}
+
+/* landing animations */
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes dashmove {
+  to { stroke-dashoffset: -28; }
+}
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.reveal.in {
+  opacity: 1;
+  transform: none;
+}
+.text-gradient {
+  background: linear-gradient(180deg, #eef4fb 30%, #8fb6c9 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* scrollbars */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #28394f; border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }

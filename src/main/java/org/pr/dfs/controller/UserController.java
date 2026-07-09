@@ -2,15 +2,12 @@ package org.pr.dfs.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.pr.dfs.dto.ApiResponse;
 import org.pr.dfs.model.User;
 import org.pr.dfs.model.UserContext;
-import org.pr.dfs.security.SessionManager;
-import org.pr.dfs.service.EncryptionService;
+import org.pr.dfs.security.JwtService;
 import org.pr.dfs.service.UserService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,7 +15,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.Map;
 
-@CrossOrigin
 @Slf4j
 @RestController
 @RequestMapping("/user")
@@ -27,18 +23,24 @@ import java.util.Map;
 public class UserController {
 
     private final UserService userService;
-    private final SessionManager sessionManager;
-    private final EncryptionService encryptionService;
+    private final JwtService jwtService;
 
     @PostMapping("/register")
-    public ResponseEntity<ApiResponse<User>> registerUser(@RequestBody Map<String, String> request) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> registerUser(@RequestBody Map<String, String> request) {
         try {
             String username = request.get("username");
             String email = request.get("email");
             String password = request.get("password");
 
             User user = userService.createUser(username, email, password);
-            return ResponseEntity.ok(ApiResponse.success("User registered successfully", user));
+            String token = jwtService.generateToken(user);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("token", token);
+            result.put("user", user);
+
+            log.info("User {} registered (JWT issued)", username);
+            return ResponseEntity.ok(ApiResponse.success("User registered successfully", result));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error("Registration failed", e.getMessage()));
@@ -47,30 +49,22 @@ public class UserController {
 
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<Map<String, Object>>> loginUser(
-            @RequestBody Map<String, String> request,
-            HttpServletResponse response) {
+            @RequestBody Map<String, String> request) {
         try {
             String username = request.get("username");
             String password = request.get("password");
 
             if (userService.validateUser(username, password)) {
                 User user = userService.getUserByUsername(username);
+                userService.updateLastLoginTime(user.getUserId());
 
-                String sessionId = sessionManager.createSession(user);
-
-                Cookie sessionCookie = new Cookie("SESSION-ID", sessionId);
-                sessionCookie.setHttpOnly(true);
-                sessionCookie.setPath("/");
-                sessionCookie.setMaxAge(30 * 60); // 30 minutes
-                response.addCookie(sessionCookie);
+                String token = jwtService.generateToken(user);
 
                 Map<String, Object> result = new HashMap<>();
+                result.put("token", token);
                 result.put("user", user);
-                result.put("sessionId", sessionId);
-                result.put("message", "Login successful");
 
-                log.info("User {} logged in with session {}", username, sessionId);
-
+                log.info("User {} logged in (JWT issued)", username);
                 return ResponseEntity.ok(ApiResponse.success("Login successful", result));
             } else {
                 return ResponseEntity.badRequest()
@@ -81,43 +75,39 @@ public class UserController {
                     .body(ApiResponse.error("Login failed: " + e.getMessage()));
         }
     }
+    @GetMapping("/me")
+    @Operation(summary = "Get current user info", description = "Get current authenticated user information")
+    public ResponseEntity<ApiResponse<User>> getCurrentUserInfo() {
+        try {
+            User currentUser = UserContext.getCurrentUser();
+            if (currentUser == null) {
+                return ResponseEntity.status(401)
+                        .body(ApiResponse.error("No authenticated user found"));
+            }
 
-    @GetMapping("/current-user")
-    public ResponseEntity<ApiResponse<User>> getCurrentUser(
-            @CookieValue(value = "SESSION-ID", required = false) String sessionId) {
-
-        if (sessionId == null) {
+            log.info("User {} accessing /me endpoint", currentUser.getUsername());
+            return ResponseEntity.ok(ApiResponse.success("User info retrieved", currentUser));
+        } catch (Exception e) {
+            log.error("Error in /me endpoint", e);
             return ResponseEntity.status(401)
-                    .body(ApiResponse.error("No session found"));
-        }
-
-        User user = sessionManager.getUserBySession(sessionId);
-        if (user != null) {
-            UserContext.setCurrentUser(user);
-            log.info("Current user retrieved: {}", user.getUsername());
-            return ResponseEntity.ok(ApiResponse.success(user));
-        } else {
-            return ResponseEntity.status(401)
-                    .body(ApiResponse.error("Invalid or expired session"));
+                    .body(ApiResponse.error("Authentication required"));
         }
     }
 
-    @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<Void>> logout(
-            @CookieValue(value = "SESSION-ID", required = false) String sessionId,
-            HttpServletResponse response) {
 
-        if (sessionId != null) {
-            sessionManager.invalidateSession(sessionId);
-            log.info("Session invalidated: {}", sessionId);
+    @GetMapping("/current-user")
+    public ResponseEntity<ApiResponse<User>> getCurrentUser() {
+        User user = UserContext.getCurrentUser();
+        if (user != null) {
+            return ResponseEntity.ok(ApiResponse.success(user));
         }
+        return ResponseEntity.status(401)
+                .body(ApiResponse.error("Invalid or missing token"));
+    }
 
-        Cookie sessionCookie = new Cookie("SESSION-ID", "");
-        sessionCookie.setHttpOnly(true);
-        sessionCookie.setPath("/");
-        sessionCookie.setMaxAge(0);
-        response.addCookie(sessionCookie);
-
+    @PostMapping("/logout")
+    @Operation(summary = "Log out", description = "Stateless logout — the client simply discards its token")
+    public ResponseEntity<ApiResponse<Void>> logout() {
         UserContext.clear();
         return ResponseEntity.ok(ApiResponse.success("Logged out successfully", null));
     }

@@ -1,9 +1,5 @@
 package org.pr.dfs.client;
 
-import org.jline.reader.LineReader;
-import org.jline.reader.LineReaderBuilder;
-import org.jline.terminal.Terminal;
-import org.jline.terminal.TerminalBuilder;
 import org.pr.dfs.model.*;
 import org.pr.dfs.utils.FileUtils;
 
@@ -14,6 +10,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Scanner;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -29,13 +26,16 @@ public class DFSClient {
     private static final Logger LOGGER = Logger.getLogger(DFSClient.class.getName());
 
     // Configuration constants for file operations
-    private static final int CHUNK_SIZE = 1024 * 1024; // 1MB chunks for file transfer
-    private static final String PATH_SEPARATOR = "/";   // Standard Unix-style separator for remote paths
-    private static final int BUFFER_SIZE = 8192;       // Buffer size for file downloads
+    private static final int CHUNK_SIZE = 8192; // 8KB chunks for file transfer
+    private static final int BUFFER_SIZE = 8192; // Buffer size for file operations
+    private static final int MAX_RETRIES = 3;
+    private static final int TIMEOUT_MS = 30000; // 30 second timeout
+    private static final int PROGRESS_UPDATE_INTERVAL = 1000; // Update progress every second
+    private static final int DEFAULT_REPLICATION_FACTOR = 3;
     private static final int HEALTH_CHECK_INTERVAL = 30; // seconds
-    private static final int DEFAULT_REPLICATION_FACTOR = 3; // DEfault number of replicas
+    private static final String PATH_SEPARATOR = "/";
 
-    // ANSI color codes for terminal output formatting
+    // ANSI color codes for enhanced terminal output
     private static final String ANSI_RESET = "\u001B[0m";
     private static final String ANSI_GREEN = "\u001B[32m";
     private static final String ANSI_BLUE = "\u001B[34m";
@@ -50,7 +50,7 @@ public class DFSClient {
     private final DirectoryOperations dirOps;
     private final VersionOperations versionOps;
     private final SimpleDateFormat dateFormat;
-    private final LineReader lineReader;
+    private final Scanner scanner;
     private final ScheduledExecutorService scheduler;
     private final String clientId;
 
@@ -64,9 +64,8 @@ public class DFSClient {
      *
      * @param serverAddress The address of the DFS server
      * @param serverPort The port number of the DFS server
-     * @throws IOException If terminal initialization fails
      */
-    public DFSClient(String serverAddress, int serverPort) throws IOException {
+    public DFSClient(String serverAddress, int serverPort) {
         this.serverAddress = serverAddress;
         this.serverPort = serverPort;
         this.dirOps = new DirectoryOperations(new DFSClientCommunicator(serverAddress, serverPort));
@@ -75,13 +74,9 @@ public class DFSClient {
         this.clientId = System.getProperty("user.name", "unknown") + "-" +
                             Long.toHexString(System.currentTimeMillis());
 
-        // Initialize terminal for interactive input
-        Terminal terminal = TerminalBuilder.builder().system(true).build();
-        this.lineReader = LineReaderBuilder.builder()
-                .terminal(terminal)
-                .build();
-
-        this.scheduler = Executors.newScheduledThreadPool(1);
+        // Initialize scanner for interactive input
+        this.scanner = new Scanner(System.in);
+        this.scheduler = Executors.newScheduledThreadPool(2);
 
         displayWelcomeBanner();
     }
@@ -320,8 +315,8 @@ public class DFSClient {
      */
     private void createVersion() {
         try {
-            String filePath = lineReader.readLine("Enter file path: ");
-            String comment = lineReader.readLine("Enter version comment: ");
+            String filePath = scanner.nextLine();
+            String comment = scanner.nextLine();
 
             // Remove any quotes if present
             filePath = filePath.replaceAll("\"","");
@@ -353,7 +348,7 @@ public class DFSClient {
      */
     private void listVersions() {
         try {
-            String filePath = lineReader.readLine("Enter file path: ");
+            String filePath = scanner.nextLine();
             List<Version> versions = versionOps.listVersions(normalizePath(filePath));
 
             if (versions.isEmpty()) {
@@ -382,8 +377,8 @@ public class DFSClient {
      */
     private void restoreVersion() {
         try {
-            String filePath = lineReader.readLine("Enter file path: ");
-            String versionId = lineReader.readLine("Enter version ID to restore: ");
+            String filePath = scanner.nextLine();
+            String versionId = scanner.nextLine();
 
             FileOperationResult result = versionOps.restoreVersion(
                     normalizePath(filePath),
@@ -405,13 +400,13 @@ public class DFSClient {
 
     public void updateFile() {
         try {
-           String localPath = lineReader.readLine("Enter local file path to update: ");
-           String remotePath = lineReader.readLine("Enter remote file path: ");
-           String comment = lineReader.readLine("Enter version comment");
+           String localPath = scanner.nextLine();
+           String remotePath = scanner.nextLine();
+           String comment = scanner.nextLine();
            int replicationFactor = DEFAULT_REPLICATION_FACTOR;
 
            try {
-               String replicationInput = lineReader.readLine("Enter replication factor (default: " + DEFAULT_REPLICATION_FACTOR + "): ");
+               String replicationInput = scanner.nextLine();
                if(!replicationInput.trim().isEmpty()) {
                    replicationFactor = Integer.parseInt(replicationInput);
                }
@@ -446,7 +441,7 @@ public class DFSClient {
      * @throws IOException If directory listing fails
      */
     private void listDirectory() throws IOException, ClassNotFoundException {
-        String path = lineReader.readLine("Enter path to list (or press Enter for root): ");
+        String path = scanner.nextLine();
         path = path.isEmpty() ? "/" : normalizePath(path);
 
         List<FileMetaData> files = dirOps.listDirectory(path);
@@ -509,7 +504,7 @@ public class DFSClient {
             ObjectInputStream ois = new ObjectInputStream(socket.getInputStream())) {
 
             // Read the file path from the user
-            String filePath = lineReader.readLine("Enter file path to show replication status: ");
+            String filePath = scanner.nextLine();
             String normalizedPath = normalizePath(filePath);
             showReplicationStatus(normalizedPath);
 
@@ -648,12 +643,12 @@ public class DFSClient {
             ObjectInputStream ois = new ObjectInputStream(socket.getInputStream())) {
 
             // Read the file path from the user
-            String filePath = lineReader.readLine("Enter file path to force replication: ");
+            String filePath = scanner.nextLine();
             String normalizedPath = normalizePath(filePath);
 
             int replicationFactor = DEFAULT_REPLICATION_FACTOR;
             try {
-                String replicationFactorString = lineReader.readLine("Enter replication factor (default: " + DEFAULT_REPLICATION_FACTOR + "): ");
+                String replicationFactorString = scanner.nextLine();
                 if(!replicationFactorString.trim().isEmpty()) {
                     replicationFactor = Integer.parseInt(replicationFactorString);
                 }
@@ -699,7 +694,7 @@ public class DFSClient {
             ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
             ObjectInputStream ois = new ObjectInputStream(socket.getInputStream())) {
 
-            String nodeId = lineReader.readLine("Enter failed node ID (leave empty for auto-detection) : ");
+            String nodeId = scanner.nextLine();
 
             Command command = new Command(Command.Type.RECOVER_NODE);
             if (!nodeId.trim().isEmpty()) {
@@ -732,9 +727,9 @@ public class DFSClient {
             ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
             ObjectInputStream ois = new ObjectInputStream(socket.getInputStream())) {
 
-            String nodeAddress = lineReader.readLine("Enter node address: ");
-            String nodePort = lineReader.readLine("Enter node port: ");
-            String storagePath = lineReader.readLine("Enter storage path: ");
+            String nodeAddress = scanner.nextLine();
+            String nodePort = scanner.nextLine();
+            String storagePath = scanner.nextLine();
 
             Node newNode = new Node(serverAddress, serverPort);
             newNode.setStoragePath(storagePath);
@@ -832,33 +827,32 @@ public class DFSClient {
         while (true) {
             try {
                 showPrompt();
-                String choice = lineReader.readLine("Choose an option: ");
+                String choice = scanner.nextLine();
 
                 switch (choice) {
                     case "1" -> listDirectory();
                     case "2" -> {
-                        String path = lineReader.readLine("Enter directory path to create: ");
+                        String path = scanner.nextLine();
                         boolean created = dirOps.createDirectory(path);
                         System.out.println(created ?
                                 ANSI_GREEN + "Directory created successfully" + ANSI_RESET :
                                 ANSI_YELLOW + "Failed to create directory" + ANSI_RESET);
                     }
                     case "3" -> {
-                        String path = lineReader.readLine("Enter directory path to delete: ");
+                        String path = scanner.nextLine();
                         boolean deleted = dirOps.deleteDirectory(path);
                         System.out.println(deleted ?
                                 ANSI_GREEN + "Directory deleted successfully" + ANSI_RESET :
                                 ANSI_YELLOW + "Failed to delete directory" + ANSI_RESET);
                     }
                     case "4" -> {
-                        String localPath = lineReader.readLine("Enter local file path: ");
-                        String remotePath = lineReader.readLine("Enter remote directory path (or press Enter for root): ");
+                        String localPath = scanner.nextLine();
+                        String remotePath = scanner.nextLine();
                         if (remotePath.isEmpty()) remotePath = "/";
 
                         int replicationFactor = DEFAULT_REPLICATION_FACTOR;
                         try {
-                            String replicationInput = lineReader.readLine("Enter replication factor (default: " +
-                                    DEFAULT_REPLICATION_FACTOR + "): ");
+                            String replicationInput = scanner.nextLine();
                             if (!replicationInput.trim().isEmpty()) {
                                 replicationFactor = Integer.parseInt(replicationInput);
                             }
@@ -871,13 +865,13 @@ public class DFSClient {
                         uploadFile(localPath, remotePath, replicationFactor);
                     }
                     case "5" -> {
-                        String remotePath = lineReader.readLine("Enter remote file path: ");
-                        String localPath = lineReader.readLine("Enter local file path: ");
+                        String remotePath = scanner.nextLine();
+                        String localPath = scanner.nextLine();
                         downloadFile(remotePath, localPath);
                     }
                     case "6" -> {
-                        String sourcePath = lineReader.readLine("Enter source path: ");
-                        String destPath = lineReader.readLine("Enter destination path: ");
+                        String sourcePath = scanner.nextLine();
+                        String destPath = scanner.nextLine();
                         boolean moved = dirOps.moveOrRename(sourcePath, destPath);
                         System.out.println(moved ?
                                 ANSI_GREEN + "Move/rename successful" + ANSI_RESET :
@@ -952,3 +946,4 @@ public class DFSClient {
         }
     }
 }
+

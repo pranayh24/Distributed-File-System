@@ -5,9 +5,14 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.pr.dfs.dto.ApiResponse;
+import org.pr.dfs.model.FilePlacement;
 import org.pr.dfs.model.Node;
+import org.pr.dfs.model.User;
+import org.pr.dfs.model.UserContext;
+import org.pr.dfs.node.EmbeddedNodeCluster;
 import org.pr.dfs.replication.NodeManager;
 import org.pr.dfs.service.HealthMonitoringService;
+import org.pr.dfs.service.PlacementRegistry;
 import org.pr.dfs.service.SystemService;
 import org.pr.dfs.service.SimpleNodeService;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +32,8 @@ public class SystemController {
     private final NodeManager nodeManager;
     private final HealthMonitoringService healthMonitoringService;
     private final SimpleNodeService simpleNodeService; // Added missing dependency
+    private final EmbeddedNodeCluster nodeCluster;
+    private final PlacementRegistry placementRegistry;
 
     // ===========================================
     // SYSTEM HEALTH & METRICS
@@ -270,6 +277,65 @@ public class SystemController {
             return ResponseEntity.status(500)
                     .body(ApiResponse.error("Failed to mark node as unhealthy: " + e.getMessage()));
         }
+    }
+
+    @PostMapping("/nodes/{nodeId}/kill")
+    @Operation(summary = "Kill a node", description = "Actually stops the node's server to demonstrate a real failure (replication will skip it and reads fail over)")
+    public ResponseEntity<ApiResponse<String>> killNode(@PathVariable String nodeId) {
+        if (nodeManager.getNodeById(nodeId) == null) {
+            return ResponseEntity.notFound().build();
+        }
+        boolean killed = nodeCluster.stopNode(nodeId);
+        if (!killed) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Node " + nodeId + " is not running"));
+        }
+        return ResponseEntity.ok(ApiResponse.success("Node killed",
+                "Node " + nodeId + " server stopped — cluster is now degraded"));
+    }
+
+    @PostMapping("/nodes/{nodeId}/revive")
+    @Operation(summary = "Revive a node", description = "Restarts a previously-killed node's server so it rejoins the cluster")
+    public ResponseEntity<ApiResponse<String>> reviveNode(@PathVariable String nodeId) {
+        if (nodeManager.getNodeById(nodeId) == null) {
+            return ResponseEntity.notFound().build();
+        }
+        boolean revived = nodeCluster.startNode(nodeId);
+        if (!revived) {
+            return ResponseEntity.status(500)
+                    .body(ApiResponse.error("Failed to revive node " + nodeId));
+        }
+        return ResponseEntity.ok(ApiResponse.success("Node revived",
+                "Node " + nodeId + " restarted and rejoined the cluster"));
+    }
+
+    @GetMapping("/files/placement")
+    @Operation(summary = "File placement map", description = "Authoritative record of which nodes hold each file's replicas")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> filePlacement() {
+        User current = UserContext.getCurrentUser();
+        String userId = current != null ? current.getUserId() : null;
+
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (FilePlacement fp : placementRegistry.all()) {
+            // Only show the signed-in user's own files
+            if (userId != null && !userId.equals(fp.getUserId())) {
+                continue;
+            }
+            List<String> all = fp.getNodeIds().stream().sorted().collect(Collectors.toList());
+            List<String> healthy = all.stream().filter(nodeManager::isNodeHealthy).collect(Collectors.toList());
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("filePath", fp.getFilePath());
+            m.put("fileName", fp.getFileName());
+            m.put("size", fp.getSize());
+            m.put("replicationFactor", fp.getReplicationFactor());
+            m.put("currentReplicas", healthy.size());
+            m.put("nodeIds", all);
+            m.put("healthyNodeIds", healthy);
+            m.put("underReplicated", healthy.size() < fp.getReplicationFactor());
+            m.put("createdAt", fp.getCreatedAt());
+            out.add(m);
+        }
+        return ResponseEntity.ok(ApiResponse.success("File placement", out));
     }
 
     @GetMapping("/replication/status")

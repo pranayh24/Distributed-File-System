@@ -1,20 +1,16 @@
 import axios from 'axios';
 
-const API_BASE_URL = "http://localhost:8080/api";
-
+// Vite proxies /api -> http://localhost:8080 (see vite.config.ts), so no CORS / no hardcoded host.
 export const api = axios.create({
-    baseURL: API_BASE_URL,
+    baseURL: '/api',
     timeout: 30000,
-    headers: {
-        'Content-Type': 'application/json'
-    },
+    headers: { 'Content-Type': 'application/json' },
 });
 
-// Request interceptor to add session token
 api.interceptors.request.use((config) => {
-    const sessionId = localStorage.getItem('sessionId');
-    if(sessionId) {
-        config.headers['X-Session_ID'] = sessionId;
+    const token = localStorage.getItem('token');
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
 });
@@ -22,13 +18,15 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
     (response) => response,
     (error) => {
-        if(error.response?.status === 401) {
-            localStorage.removeItem('sessionId');
-            window.location.href = '/login';
+        if (error.response?.status === 401) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            if (!window.location.pathname.startsWith('/login')) {
+                window.location.href = '/login';
+            }
         }
         return Promise.reject(error);
-    }
+    },
 );
 
 export default api;
-

@@ -1,2 +1,13 @@
 /logs/
 /.idea/
+/target/
+/storage/
+/dfs_storage/
+*.log
+
+# secrets — never commit
+.env
+
+# frontend
+/dfs-frontend/node_modules/
+/dfs-frontend/dist/

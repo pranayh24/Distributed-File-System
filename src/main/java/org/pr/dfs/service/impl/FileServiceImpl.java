@@ -40,6 +40,8 @@ public class FileServiceImpl implements FileService {
     private final SimpleNodeService simpleNodeService;
     private final SearchService searchService;
     private final EncryptionService encryptionService;
+    private final PlacementRegistry placementRegistry;
+    private final EventService eventService;
 
     private static final int CHUNK_SIZE = 1024 * 1024; // 1MB chunks
 
@@ -85,8 +87,11 @@ public class FileServiceImpl implements FileService {
                 throw new IllegalArgumentException("File already exists: " + fileName);
             }
 
+            eventService.uploadStarted(fileName, file.getSize(), currentUser.getUserId());
+
             byte[] originalFileData = file.getBytes();
             byte[] encryptedFileData = encryptionService.encryptFile(originalFileData, currentUser.getUserId());
+            eventService.encrypted(fileName, encryptedFileData.length, currentUser.getUserId());
 
             FileMetaDataDto result = processDistributedUpload(file, encryptedFileData ,userScopedPath, request.getReplicationFactor());
 
@@ -130,20 +135,22 @@ public class FileServiceImpl implements FileService {
 
         List<Node> targetNodes = selectTargetNodes(availableNodes, actualReplicationFactor);
 
-        boolean uploadSuccess = false;
+        String ownerId = UserContext.getCurrentUser() != null ? UserContext.getCurrentUser().getUserId() : null;
+        List<String> storedNodeIds = new ArrayList<>();
         Exception lastException = null;
-        byte[] fileData = file.getBytes();
 
-        // Use SimpleNodeService for distributed upload
+        // Replicate the encrypted bytes to each selected node (real HTTP store, one per node)
         for (Node node : targetNodes) {
             try {
                 boolean success = simpleNodeService.storeFileOnNode(node, userScopedPath, encryptedFileData);
                 if (success) {
                     node.addHostedFile(userScopedPath);
-                    log.info("Encrypted File {} replicated to node {} using simple HTTP", userScopedPath, node.getNodeId());
-                    uploadSuccess = true;
+                    storedNodeIds.add(node.getNodeId());
+                    eventService.replicaStored(file.getOriginalFilename(), node.getNodeId(),
+                            storedNodeIds.size(), actualReplicationFactor, ownerId);
+                    log.info("Encrypted file {} replicated to node {}", userScopedPath, node.getNodeId());
                 } else {
-                    log.error("Failed to replicate encrypted file {} to node {} using simple HTTP", userScopedPath, node.getNodeId());
+                    log.error("Failed to replicate encrypted file {} to node {}", userScopedPath, node.getNodeId());
                 }
             } catch (Exception e) {
                 log.error("Failed to replicate encrypted file {} to node {}: {}", userScopedPath, node.getNodeId(), e.getMessage());
@@ -151,16 +158,17 @@ public class FileServiceImpl implements FileService {
             }
         }
 
-        if (!uploadSuccess) {
+        if (storedNodeIds.isEmpty()) {
             throw new RuntimeException("Failed to upload file to any node", lastException);
         }
 
-        // Store locally for backup/metadata purposes
-        Path userFilePath = Paths.get(dfsConfig.getStorage().getPath(), userScopedPath);
-        Files.createDirectories(userFilePath.getParent());
-        Files.write(userFilePath, encryptedFileData);
+        // Record authoritative placement — source of truth for the dashboard and self-healing
+        placementRegistry.record(userScopedPath, file.getOriginalFilename(), ownerId,
+                encryptedFileData.length, actualReplicationFactor, storedNodeIds);
+        eventService.uploadCommitted(file.getOriginalFilename(), storedNodeIds.size(), actualReplicationFactor, ownerId);
 
-        replicationManager.replicateFile(userScopedPath, actualReplicationFactor);
+        // No local copy: the storage nodes are the only home for the data. If every node
+        // holding a replica is down, the file is genuinely unavailable (that's the point).
 
         return FileMetaDataDto.builder()
                 .name(file.getOriginalFilename())
@@ -169,14 +177,18 @@ public class FileServiceImpl implements FileService {
                 .contentType(file.getContentType())
                 .uploadTime(LocalDateTime.now())
                 .replicationFactor(actualReplicationFactor)
+                .currentReplicas(storedNodeIds.size())
                 .build();
     }
 
     private List<Node> selectTargetNodes(List<Node> availableNodes, int replicationFactor) {
-        List<Node> selectedNodes = availableNodes.stream()
+        // Spread replicas across the cluster instead of always using the first N nodes,
+        // so files distribute over all healthy nodes (visible placement + balanced load).
+        List<Node> shuffled = new ArrayList<>(availableNodes);
+        Collections.shuffle(shuffled);
+        return shuffled.stream()
                 .limit(replicationFactor)
                 .collect(Collectors.toList());
-        return selectedNodes;
     }
 
     private Path getNodeStoragePath(Node node, String userScopedPath) {
@@ -199,26 +211,15 @@ public class FileServiceImpl implements FileService {
             log.warn("Failed to update file access tracking: {}", e.getMessage());
         }
 
-        byte[] encryptedFileData = null;
         String fileName = Paths.get(normalizedPath).getFileName().toString();
 
-        encryptedFileData = simpleNodeService.retrieveFile(userScopedPath);
-        if (encryptedFileData != null) {
-            log.info("Encrypted File {} retrieved from distributed nodes", userScopedPath);
-        } else {
-            Path fullPath = Paths.get(dfsConfig.getStorage().getPath(), userScopedPath);
-
-            if(!Files.exists(fullPath)) {
-                throw new FileNotFoundException("File not found: " + normalizedPath);
-            }
-
-            if(!isWithinUserDirectory(currentUser, fullPath)) {
-                throw new SecurityException("Access Denied: File is outside user's directory");
-            }
-
-            encryptedFileData = Files.readAllBytes(fullPath);
-            log.info("Encrypted file {} retrieved from local storage", userScopedPath);
+        // Retrieve only from the distributed nodes — there is no local copy to fall back on.
+        byte[] encryptedFileData = simpleNodeService.retrieveFile(userScopedPath);
+        if (encryptedFileData == null) {
+            throw new FileNotFoundException(
+                    "File is currently unavailable — no healthy node holds a replica of " + fileName);
         }
+        log.info("Encrypted file {} retrieved from a distributed node", userScopedPath);
 
         try {
             byte[] decryptedFileData = encryptionService.decryptFile(encryptedFileData, currentUser.getUserId());
@@ -280,50 +281,41 @@ public class FileServiceImpl implements FileService {
         log.info("User {} deleting file: {} (resolved to: {})",
                 currentUser.getUsername(), normalizedPath, userScopedPath);
 
-        Path fullPath = Paths.get(dfsConfig.getStorage().getPath(), userScopedPath);
+        // Existence is tracked by the placement registry / metadata — the nodes are the storage now.
+        FilePlacement placement = placementRegistry.get(userScopedPath);
+        FileMetadata metadata = null;
+        try {
+            metadata = searchService.getFileMetadataByPath(userScopedPath);
+        } catch (Exception e) {
+            log.warn("Could not load metadata for {}: {}", userScopedPath, e.getMessage());
+        }
 
-        if (!Files.exists(fullPath)) {
+        if (placement == null && metadata == null) {
             return false;
         }
 
-        if (!isWithinUserDirectory(currentUser, fullPath)) {
-            throw new SecurityException("Access denied: File is outside user's directory");
-        }
+        long fileSize = metadata != null ? metadata.getFileSize() : 0;
 
-        long fileSize = 0;
+        // Remove the replicas from every node, then drop all tracking
         try {
-            FileMetadata metadata = searchService.getFileMetadataByPath(userScopedPath);
-            if(metadata != null) {
-                fileSize = metadata.getFileSize();
-            } else {
-                fileSize = Files.size(fullPath);
-            }
+            simpleNodeService.deleteFile(userScopedPath);
         } catch (Exception e) {
-            log.warn("Could not determine file size for deletion: {}", e.getMessage());
-            fileSize =Files.size(fullPath);
+            log.warn("Failed to delete replicas from nodes for {}: {}", userScopedPath, e.getMessage());
         }
 
-        boolean deleted = Files.deleteIfExists(fullPath);
-
-        if (deleted) {
+        if (fileSize > 0) {
             userService.updateUserStorageUsage(currentUser.getUserId(), -fileSize);
-
-            try {
-                searchService.deleteFileMetadata(userScopedPath);
-            } catch (Exception e) {
-                log.warn("Failed to delete metadata from database: {}", e.getMessage());
-            }
-
-            try {
-                replicationManager.handleFileDeletion(userScopedPath);
-            } catch (Exception e) {
-                log.warn("Failed to clean up replication for deleted file {}: {}", userScopedPath, e.getMessage());
-            }
-
-            log.info("Successfully deleted encrypted file: {}", userScopedPath);
         }
+        try {
+            searchService.deleteFileMetadata(userScopedPath);
+        } catch (Exception e) {
+            log.warn("Failed to delete metadata from database: {}", e.getMessage());
+        }
+        placementRegistry.remove(userScopedPath);
+        eventService.fileDeleted(Paths.get(userScopedPath).getFileName().toString(), currentUser.getUserId());
 
-        return deleted;
+        log.info("Successfully deleted file: {}", userScopedPath);
+        return true;
     }
 
     private FileMetaDataDto convertFileMetadataToDto(FileMetadata metadata) {

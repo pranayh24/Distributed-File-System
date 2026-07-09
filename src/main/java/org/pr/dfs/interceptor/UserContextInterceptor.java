@@ -2,66 +2,47 @@ package org.pr.dfs.interceptor;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.pr.dfs.model.UserContext;
 import org.pr.dfs.model.User;
-import org.pr.dfs.security.SessionManager;
+import org.pr.dfs.model.UserContext;
+import org.pr.dfs.security.JwtService;
+import org.pr.dfs.service.UserService;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+/**
+ * Authenticates requests from a stateless JWT and populates {@link UserContext}.
+ * The token is read from the {@code Authorization: Bearer <token>} header, or — for
+ * browser {@code EventSource} which cannot set headers — from a {@code ?token=} query param.
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class UserContextInterceptor implements HandlerInterceptor {
 
-    private final SessionManager sessionManager;
+    private final JwtService jwtService;
+    private final UserService userService;
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
-        String requestPath = request.getRequestURI();
+        String path = request.getRequestURI();
 
-        log.info("=== INTERCEPTOR DEBUG ===");
-        log.info("Request URI: {}", requestPath);
-        log.info("Request URL: {}", request.getRequestURL());
-        log.info("Context Path: {}", request.getContextPath());
-        log.info("Servlet Path: {}", request.getServletPath());
+        User user = resolveUser(request);
+        if (user != null) {
+            UserContext.setCurrentUser(user);
+        }
 
-        // Allow public endpoints
-        if (isPublicEndpoint(requestPath)) {
-            log.info("PUBLIC endpoint, allowing access: {}", requestPath);
+        // Public endpoints (and /user/me, which returns its own 401 when no user is present)
+        if (path.contains("/user/me") || isPublicEndpoint(path)) {
             return true;
         }
 
-        // Get session ID from header or cookie
-        String sessionId = getSessionId(request);
-        log.info("Session ID extracted: {}", sessionId);
-
-        User user = null;
-        if (sessionId != null) {
-            user = sessionManager.getUserBySession(sessionId);
-            log.info("User found for session: {}", user != null ? user.getUsername() : "NULL");
-        } else {
-            log.warn("NO SESSION ID FOUND!");
+        if (requiresAuthentication(path) && user == null) {
+            sendUnauthorized(response);
+            return false;
         }
-
-        // authentication for all file and directory operations
-        boolean requiresAuth = requiresAuthentication(requestPath);
-        log.info("Path {} requires authentication: {}", requestPath, requiresAuth);
-
-        if (requiresAuth) {
-            if (user == null) {
-                log.error("UNAUTHORIZED: No user found for path: {}", requestPath);
-                sendUnauthorizedResponse(response);
-                return false;
-            }
-
-            UserContext.setCurrentUser(user);
-            log.info("SUCCESS: User context set for user: {} accessing: {}", user.getUsername(), requestPath);
-        }
-
-        log.info("=== END INTERCEPTOR DEBUG ===");
         return true;
     }
 
@@ -70,69 +51,55 @@ public class UserContextInterceptor implements HandlerInterceptor {
         UserContext.clear();
     }
 
-    private boolean isPublicEndpoint(String requestPath) {
-        boolean isPublic = requestPath.contains("/user/") ||
-                requestPath.contains("/system/health") ||
-                requestPath.contains("/swagger") ||
-                requestPath.contains("/api-docs") ||
-                requestPath.contains("/v3/api-docs") ||
-                requestPath.contains("/swagger-ui");
-
-        log.info("Is public endpoint check: {} -> {}", requestPath, isPublic);
-        return isPublic;
-    }
-
-    private boolean requiresAuthentication(String requestPath) {
-        boolean requires = requestPath.contains("/files") ||
-                requestPath.contains("/directories") ||
-                requestPath.contains("/versions") ||
-                requestPath.contains("/search");
-        log.info("Requires auth check: {} -> {}", requestPath, requires);
-        return requires;
-    }
-
-    private String getSessionId(HttpServletRequest request) {
-        // Log all headers
-        log.info("=== HEADERS ===");
-        java.util.Enumeration<String> headerNames = request.getHeaderNames();
-        while (headerNames.hasMoreElements()) {
-            String headerName = headerNames.nextElement();
-            log.info("Header: {} = {}", headerName, request.getHeader(headerName));
+    private User resolveUser(HttpServletRequest request) {
+        String token = extractToken(request);
+        if (token == null) {
+            return null;
         }
-
-        // Try header first
-        String sessionId = request.getHeader("X-Session-ID");
-        log.info("Session ID from X-Session-ID header: {}", sessionId);
-
-        // Fallback to cookie
-        if (sessionId == null) {
-            sessionId = getSessionIdFromCookies(request);
-            log.info("Session ID from cookies: {}", sessionId);
+        String userId = jwtService.getUserId(token);
+        if (userId == null) {
+            return null;
         }
-
-        return sessionId;
+        try {
+            User user = userService.getUserById(userId);
+            return (user != null && user.isActive()) ? user : null;
+        } catch (Exception e) {
+            log.debug("Could not load user {} from token: {}", userId, e.getMessage());
+            return null;
+        }
     }
 
-    private String getSessionIdFromCookies(HttpServletRequest request) {
-        log.info("=== COOKIES ===");
-        if (request.getCookies() != null) {
-            for (var cookie : request.getCookies()) {
-                log.info("Cookie: {} = {}", cookie.getName(), cookie.getValue());
-                if ("SESSION-ID".equals(cookie.getName())) {
-                    return cookie.getValue();
-                }
-            }
-        } else {
-            log.info("NO COOKIES FOUND");
+    private String extractToken(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header != null && header.startsWith("Bearer ")) {
+            return header.substring(7).trim();
         }
-        return null;
+        // Fallback for SSE / EventSource, which cannot send custom headers
+        return request.getParameter("token");
     }
 
-    private void sendUnauthorizedResponse(HttpServletResponse response) {
+    private boolean isPublicEndpoint(String path) {
+        return path.contains("/user/login")
+                || path.contains("/user/register")
+                || path.contains("/system/health")
+                || path.contains("/swagger")
+                || path.contains("/api-docs")
+                || path.contains("/v3/api-docs")
+                || path.contains("/swagger-ui");
+    }
+
+    private boolean requiresAuthentication(String path) {
+        return path.contains("/files")
+                || path.contains("/directories")
+                || path.contains("/versions")
+                || path.contains("/search");
+    }
+
+    private void sendUnauthorized(HttpServletResponse response) {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType("application/json");
         try {
-            response.getWriter().write("{\"success\":false,\"error\":\"Authentication required. Please log in first.\"}");
+            response.getWriter().write("{\"success\":false,\"error\":\"Authentication required. Please log in.\"}");
         } catch (Exception e) {
             log.error("Error writing unauthorized response", e);
         }

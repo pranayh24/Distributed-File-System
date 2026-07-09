@@ -1,77 +1,66 @@
-import { api } from "./api";
-import type {ApiResponse, LoginRequest, RegisterRequest, User} from "../types";
+import api from './api';
+import type { ApiResponse, AuthResult, LoginRequest, RegisterRequest, User } from '../types';
 
-export class AuthService {
-
-    static async login(credentials : LoginRequest): Promise<{ user : User; sessionId: string}> {
-        try {
-            const response = await api.post<ApiResponse<{ user: User; sessionId: string }>>(
-                '/user/login',
-                credentials
-            );
-
-            if(response.data.success && response.data.data) {
-                const { user, sessionId } = response.data.data;
-                localStorage.setItem('sessionId', sessionId);
-                localStorage.setItem('user', JSON.stringify(user));
-                return { user, sessionId };
-            }
-
-            throw new Error(response.data.error || 'Login failed');
-        } catch (error : any) {
-            throw new Error(error.response?.data?.error || error.message || 'Login failed');
-        }
-    }
-
-    static async register( userData: RegisterRequest): Promise<{ user : User; sessionId: string }> {
-        try {
-            const response = await api.post<ApiResponse<{ user : User; sessionId: string}>>(
-                '/user/register',
-                userData
-            );
-
-            if(response.data.success && response.data.data) {
-                const {user, sessionId } = response.data.data;
-                localStorage.setItem('sessionId', sessionId);
-                localStorage.setItem('user', JSON.stringify(user));
-                return { user, sessionId };
-            }
-
-            throw new Error(response.data.error || 'Registration failed');
-        } catch (error : any) {
-            throw new Error(error.response?.data?.error || error.message || 'Registration failed');
-        }
-    }
-
-    static async logout(): Promise<void> {
-        try {
-            await api.post<void>('/user/logout');
-        } catch (error) {
-            console.error('Logout error', error);
-        } finally {
-            localStorage.removeItem('sessionId');
-            localStorage.removeItem('user');
-        }
-    }
-
-    static getCurrentUser() : User | null {
-        const userStr = localStorage.getItem('user');
-        if(userStr) {
-            try {
-                return JSON.parse(userStr);
-            } catch (error) {
-                console.log("Error parsing user data:",error);
-                localStorage.removeItem('user');
-            }
-        }
-        return null;
-    }
-
-    static getSessionId() : string | null {
-        return localStorage.getItem('sessionId');
-    }
-
-    static isAuthenticated() : boolean {
-        return !!(this.getSessionId() && this.getCurrentUser());
-    }
+function persist(result: AuthResult) {
+    localStorage.setItem('token', result.token);
+    localStorage.setItem('user', JSON.stringify(result.user));
 }
+
+function extractError(e: any, fallback: string): string {
+    return e?.response?.data?.error || e?.response?.data?.message || e?.message || fallback;
+}
+
+export const authService = {
+    async login(credentials: LoginRequest): Promise<AuthResult> {
+        try {
+            const { data } = await api.post<ApiResponse<AuthResult>>('/user/login', credentials);
+            if (data.success && data.data) {
+                persist(data.data);
+                return data.data;
+            }
+            throw new Error(data.error || 'Login failed');
+        } catch (e: any) {
+            throw new Error(extractError(e, 'Login failed'));
+        }
+    },
+
+    async register(body: RegisterRequest): Promise<AuthResult> {
+        try {
+            const { data } = await api.post<ApiResponse<AuthResult>>('/user/register', body);
+            if (data.success && data.data) {
+                persist(data.data);
+                return data.data;
+            }
+            throw new Error(data.error || 'Registration failed');
+        } catch (e: any) {
+            throw new Error(extractError(e, 'Registration failed'));
+        }
+    },
+
+    logout() {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+    },
+
+    getToken(): string | null {
+        return localStorage.getItem('token');
+    },
+
+    getStoredUser(): User | null {
+        try {
+            const s = localStorage.getItem('user');
+            return s ? (JSON.parse(s) as User) : null;
+        } catch {
+            return null;
+        }
+    },
+
+    async me(): Promise<User | null> {
+        try {
+            const { data } = await api.get<ApiResponse<User>>('/user/me');
+            return data.data ?? null;
+        } catch {
+            return null;
+        }
+    },
+};

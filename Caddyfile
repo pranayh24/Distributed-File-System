@@ -1,0 +1,19 @@
+# Automatic HTTPS for your domain (Let's Encrypt). Requires the DNS record to be
+# DNS-only (gray cloud) on Cloudflare so the ACME challenge reaches this server.
+{$DOMAIN} {
+	encode zstd gzip
+
+	# API + live SSE stream go to the Spring app (path, incl. /api prefix, is preserved)
+	handle /api/* {
+		reverse_proxy app:8080 {
+			flush_interval -1
+		}
+	}
+
+	# everything else is the React single-page app
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
