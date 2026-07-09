@@ -137,7 +137,10 @@ public class DirectoryServiceImpl implements DirectoryService {
                 .path(fileMetaData.getPath())
                 .isDirectory(fileMetaData.isDirectory())
                 .size(fileMetaData.getSize())
-                .lastModified(LocalDateTime.now())
+                .lastModified(fileMetaData.getLastModified() != null ?
+                    fileMetaData.getLastModified().toInstant()
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .toLocalDateTime() : null)
                 .build();
     }
 }

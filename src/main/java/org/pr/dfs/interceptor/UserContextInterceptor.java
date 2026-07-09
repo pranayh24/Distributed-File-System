@@ -27,6 +27,11 @@ public class UserContextInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        // Let CORS preflight through untouched
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
+
         String path = request.getRequestURI();
 
         User user = resolveUser(request);
@@ -85,14 +90,19 @@ public class UserContextInterceptor implements HandlerInterceptor {
                 || path.contains("/swagger")
                 || path.contains("/api-docs")
                 || path.contains("/v3/api-docs")
-                || path.contains("/swagger-ui");
+                || path.contains("/swagger-ui")
+                || path.contains("/share/download"); // accessing a shared file is public (by link)
     }
 
     private boolean requiresAuthentication(String path) {
+        if (path.contains("/share/download")) {
+            return false;
+        }
         return path.contains("/files")
                 || path.contains("/directories")
                 || path.contains("/versions")
-                || path.contains("/search");
+                || path.contains("/search")
+                || path.contains("/share/"); // creating/listing/revoking shares needs auth
     }
 
     private void sendUnauthorized(HttpServletResponse response) {

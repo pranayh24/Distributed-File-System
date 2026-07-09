@@ -202,8 +202,8 @@ public class FileServiceImpl implements FileService {
         String normalizedPath = normalizePath(filePath);
         String userScopedPath = getUserScopedPath(currentUser, normalizedPath);
 
-        log.info("User {} downloading file: {} (resolved to: {})",
-                currentUser.getUsername(), normalizedPath, userScopedPath);
+        log.info("User {} downloading file: {} (normalized: {}, resolved to: {})",
+                currentUser.getUsername(), filePath, normalizedPath, userScopedPath);
 
         try {
             searchService.updateFileAccess(userScopedPath);
@@ -221,9 +221,10 @@ public class FileServiceImpl implements FileService {
         }
         log.info("Encrypted file {} retrieved from a distributed node", userScopedPath);
 
+        // Decrypt the file data
         try {
             byte[] decryptedFileData = encryptionService.decryptFile(encryptedFileData, currentUser.getUserId());
-            log.info("File decrypted for user {} - Encrypted size: {}, Decrypted size: {}",
+            log.info("File decrypted successfully for user {} - Encrypted size: {}, Decrypted size: {}",
                     currentUser.getUsername(), encryptedFileData.length, decryptedFileData.length);
 
             return new ByteArrayResource(decryptedFileData) {
@@ -233,7 +234,7 @@ public class FileServiceImpl implements FileService {
                 }
             };
         } catch (Exception e) {
-            log.error("Failed to decrypt file {} for user {}: {}", userScopedPath, currentUser.getUsername(), e.getMessage());
+            log.error("Failed to decrypt file {} for user {}: {}", userScopedPath, currentUser.getUsername(), e.getMessage(), e);
             throw new RuntimeException("File decryption failed: " + e.getMessage(), e);
         }
     }
